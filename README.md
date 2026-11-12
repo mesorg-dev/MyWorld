@@ -13,7 +13,7 @@ Prototype of a 2D top-down action arena built in Rust with macroquad.
 ## Controls
 
 - Desktop: WASD to move, mouse to aim, left mouse button to strike, right mouse button to throw a knife, Left Shift to dash, Space to stop time.
-- Android: drag on the left virtual stick to move; drag on the right half to aim and strike. Use the on-screen Knife, Dash, and Time buttons for abilities.
+- Android: drag the left virtual stick to move and the right virtual stick to aim; while aiming, attacks repeat. Use the on-screen Knife, Dash, and Time buttons for abilities.
 
 ## Current implementation status
 

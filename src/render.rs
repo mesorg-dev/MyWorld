@@ -1,6 +1,7 @@
 use crate::combat::Knife;
 use crate::input::{
-    ACTION_BUTTON_RADIUS, DASH_BUTTON, KNIFE_BUTTON, STICK_CENTER, STICK_RADIUS, TIMESTOP_BUTTON,
+    ACTION_BUTTON_RADIUS, AIM_STICK_CENTER, AIM_STICK_RADIUS, DASH_BUTTON, KNIFE_BUTTON,
+    STICK_CENTER, STICK_RADIUS, TIMESTOP_BUTTON,
 };
 use macroquad::prelude::*;
 
@@ -27,6 +28,8 @@ impl ArenaRenderer {
         touch_controls_visible: bool,
         move_stick_position: Vec2,
         move_stick_active: bool,
+        aim_stick_position: Vec2,
+        aim_stick_active: bool,
         wave: u32,
         time_charge: f32,
         time_stop_active: bool,
@@ -76,7 +79,12 @@ impl ArenaRenderer {
             time_stop_remaining,
         );
         if touch_controls_visible {
-            self.draw_touch_controls(move_stick_position, move_stick_active);
+            self.draw_touch_controls(
+                move_stick_position,
+                move_stick_active,
+                aim_stick_position,
+                aim_stick_active,
+            );
         }
 
         set_default_camera();
@@ -124,21 +132,52 @@ impl ArenaRenderer {
         );
     }
 
-    fn draw_touch_controls(&self, stick_position: Vec2, stick_active: bool) {
+    fn draw_touch_controls(
+        &self,
+        move_stick_position: Vec2,
+        move_stick_active: bool,
+        aim_stick_position: Vec2,
+        aim_stick_active: bool,
+    ) {
         let glass = Color::new(0.06, 0.1, 0.18, 0.52);
         let outline = Color::new(0.35, 0.78, 0.92, 0.8);
         draw_circle(STICK_CENTER.x, STICK_CENTER.y, STICK_RADIUS, glass);
         draw_circle_lines(STICK_CENTER.x, STICK_CENTER.y, STICK_RADIUS, 2.0, outline);
-        let knob = if stick_active {
-            stick_position
+        let move_knob = if move_stick_active {
+            move_stick_position
         } else {
             STICK_CENTER
         };
         draw_circle(
-            knob.x,
-            knob.y,
+            move_knob.x,
+            move_knob.y,
             13.0,
-            Color::new(0.12, 0.82, 0.9, if stick_active { 0.72 } else { 0.38 }),
+            Color::new(0.12, 0.82, 0.9, if move_stick_active { 0.72 } else { 0.38 }),
+        );
+
+        let aim_knob = if aim_stick_active {
+            aim_stick_position
+        } else {
+            AIM_STICK_CENTER
+        };
+        draw_circle(
+            AIM_STICK_CENTER.x,
+            AIM_STICK_CENTER.y,
+            AIM_STICK_RADIUS,
+            Color::new(0.16, 0.055, 0.16, 0.48),
+        );
+        draw_circle_lines(
+            AIM_STICK_CENTER.x,
+            AIM_STICK_CENTER.y,
+            AIM_STICK_RADIUS,
+            2.0,
+            Color::new(0.95, 0.3, 0.65, 0.85),
+        );
+        draw_circle(
+            aim_knob.x,
+            aim_knob.y,
+            13.0,
+            Color::new(0.92, 0.2, 0.58, if aim_stick_active { 0.78 } else { 0.4 }),
         );
 
         self.draw_touch_button(KNIFE_BUTTON, "KNIFE", Color::new(0.68, 0.25, 0.55, 0.82));

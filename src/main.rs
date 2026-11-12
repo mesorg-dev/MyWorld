@@ -102,6 +102,8 @@ impl App {
             self.input.touch_controls_visible,
             self.input.move_stick_position,
             self.input.move_stick_active,
+            self.input.aim_stick_position,
+            self.input.aim_stick_active,
             self.wave,
             self.time.time_charge,
             self.time.time_stop_active,

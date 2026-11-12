@@ -2,9 +2,11 @@ use macroquad::prelude::*;
 
 pub const STICK_CENTER: Vec2 = Vec2::new(58.0, 210.0);
 pub const STICK_RADIUS: f32 = 34.0;
-pub const KNIFE_BUTTON: Vec2 = Vec2::new(425.0, 215.0);
-pub const DASH_BUTTON: Vec2 = Vec2::new(375.0, 215.0);
-pub const TIMESTOP_BUTTON: Vec2 = Vec2::new(425.0, 160.0);
+pub const AIM_STICK_CENTER: Vec2 = Vec2::new(335.0, 207.0);
+pub const AIM_STICK_RADIUS: f32 = 34.0;
+pub const KNIFE_BUTTON: Vec2 = Vec2::new(435.0, 70.0);
+pub const DASH_BUTTON: Vec2 = Vec2::new(435.0, 130.0);
+pub const TIMESTOP_BUTTON: Vec2 = Vec2::new(435.0, 190.0);
 pub const ACTION_BUTTON_RADIUS: f32 = 21.0;
 
 #[allow(dead_code)]
@@ -22,6 +24,8 @@ pub struct InputState {
     pub touch_controls_visible: bool,
     pub move_stick_position: Vec2,
     pub move_stick_active: bool,
+    pub aim_stick_position: Vec2,
+    pub aim_stick_active: bool,
 }
 
 pub fn read_input(player_position: Vec2) -> InputState {
@@ -52,7 +56,9 @@ pub fn read_input(player_position: Vec2) -> InputState {
     let touches = touches();
     let mut move_stick_position = STICK_CENTER;
     let mut move_stick_active = false;
-    let mut touch_aim = None;
+    let mut aim_stick_position = AIM_STICK_CENTER;
+    let mut aim_stick_active = false;
+    let mut touch_aim_offset = None;
 
     for touch in &touches {
         if matches!(touch.phase, TouchPhase::Ended | TouchPhase::Cancelled) {
@@ -76,17 +82,21 @@ pub fn read_input(player_position: Vec2) -> InputState {
         } else if position.distance(TIMESTOP_BUTTON) <= ACTION_BUTTON_RADIUS {
             timestop_pressed |= started;
         } else {
-            touch_aim = Some((position, started));
+            let offset = position - AIM_STICK_CENTER;
+            aim_stick_position = AIM_STICK_CENTER + offset.clamp_length_max(AIM_STICK_RADIUS);
+            aim_stick_active = true;
+            touch_aim_offset = Some((offset, started));
         }
     }
 
     move_dir = move_dir.clamp_length_max(1.0);
-    if let Some((position, pressed)) = touch_aim {
-        aim_position = position;
-        attack_pressed |= pressed;
-        attack_held = true;
+    let mut aim_dir = (aim_position - player_position).normalize_or_zero();
+    if let Some((offset, pressed)) = touch_aim_offset {
+        aim_dir = aim_stick_direction(offset);
+        aim_position = player_position + aim_dir * 110.0;
+        attack_pressed |= pressed && aim_dir.length_squared() > 0.0;
+        attack_held = aim_dir.length_squared() > 0.0;
     }
-    let aim_dir = (aim_position - player_position).normalize_or_zero();
 
     InputState {
         move_dir,
@@ -101,6 +111,8 @@ pub fn read_input(player_position: Vec2) -> InputState {
         touch_controls_visible: cfg!(target_os = "android") || !touches.is_empty(),
         move_stick_position,
         move_stick_active,
+        aim_stick_position,
+        aim_stick_active,
     }
 }
 
@@ -111,6 +123,14 @@ fn joystick_direction(offset: Vec2) -> Vec2 {
         Vec2::ZERO
     } else {
         offset.normalize() * ((distance - deadzone) / (STICK_RADIUS - deadzone)).clamp(0.0, 1.0)
+    }
+}
+
+fn aim_stick_direction(offset: Vec2) -> Vec2 {
+    if offset.length_squared() <= 6.0_f32.powi(2) {
+        Vec2::ZERO
+    } else {
+        offset.normalize()
     }
 }
 
@@ -141,6 +161,14 @@ mod tests {
     fn joystick_has_a_deadzone_and_respects_direction() {
         assert_eq!(joystick_direction(Vec2::new(2.0, 0.0)), Vec2::ZERO);
         let up = joystick_direction(Vec2::new(0.0, -STICK_RADIUS));
+        assert!(up.y < -0.99);
+        assert_eq!(up.x, 0.0);
+    }
+
+    #[test]
+    fn aim_stick_has_a_deadzone_and_aims_in_the_pushed_direction() {
+        assert_eq!(aim_stick_direction(Vec2::new(3.0, 0.0)), Vec2::ZERO);
+        let up = aim_stick_direction(Vec2::new(0.0, -AIM_STICK_RADIUS));
         assert!(up.y < -0.99);
         assert_eq!(up.x, 0.0);
     }
