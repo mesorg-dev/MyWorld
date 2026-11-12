@@ -9,7 +9,9 @@ mod time;
 use macroquad::prelude::*;
 
 use crate::combat::Knife;
-use crate::enemies::{spawn_wave, update_enemies, Enemy};
+use crate::enemies::{
+    spawn_wave, update_enemies, update_enemy_projectiles, Enemy, EnemyProjectile,
+};
 use crate::input::{read_input, InputState};
 use crate::player::Player;
 use crate::render::ArenaRenderer;
@@ -20,6 +22,7 @@ struct App {
     input: InputState,
     player: Player,
     enemies: Vec<Enemy>,
+    enemy_projectiles: Vec<EnemyProjectile>,
     knives: Vec<Knife>,
     renderer: ArenaRenderer,
     wave: u32,
@@ -32,6 +35,7 @@ impl App {
             input: InputState::default(),
             player: Player::new(),
             enemies: spawn_wave(),
+            enemy_projectiles: Vec::new(),
             knives: Vec::new(),
             renderer: ArenaRenderer::new(),
             wave: 1,
@@ -65,8 +69,15 @@ impl App {
         }
 
         if self.time.world_dt > 0.0 {
-            let damage = update_enemies(&mut self.enemies, &self.player, self.time.world_dt);
-            self.player.take_damage(damage);
+            let enemy_update = update_enemies(&mut self.enemies, &self.player, self.time.world_dt);
+            self.player.take_damage(enemy_update.contact_damage);
+            self.enemy_projectiles.extend(enemy_update.projectiles);
+            let projectile_damage = update_enemy_projectiles(
+                &mut self.enemy_projectiles,
+                &self.player,
+                self.time.world_dt,
+            );
+            self.player.take_damage(projectile_damage);
             self.update_knives(self.time.world_dt);
         }
 
@@ -89,6 +100,7 @@ impl App {
             self.player.health = self.player.max_health;
             self.player.position = vec2(240.0, 135.0);
             self.enemies = spawn_wave();
+            self.enemy_projectiles.clear();
             self.knives.clear();
         }
     }
@@ -97,6 +109,7 @@ impl App {
         self.renderer.draw_frame(
             &self.player,
             &self.enemies,
+            &self.enemy_projectiles,
             &self.knives,
             self.input.aim_position,
             self.input.touch_controls_visible,

@@ -5,7 +5,7 @@ use crate::input::{
 };
 use macroquad::prelude::*;
 
-use crate::enemies::{Enemy, EnemyKind};
+use crate::enemies::{Enemy, EnemyKind, EnemyProjectile};
 use crate::player::Player;
 
 const VIRTUAL_WIDTH: f32 = 480.0;
@@ -23,6 +23,7 @@ impl ArenaRenderer {
         &self,
         player: &Player,
         enemies: &[Enemy],
+        enemy_projectiles: &[EnemyProjectile],
         knives: &[Knife],
         aim_position: Vec2,
         touch_controls_visible: bool,
@@ -57,6 +58,24 @@ impl ArenaRenderer {
         self.draw_arena();
         for enemy in enemies {
             self.draw_enemy(enemy);
+        }
+        for projectile in enemy_projectiles {
+            let color = match projectile.kind {
+                EnemyKind::Sniper => Color::new(0.55, 0.42, 1.0, 1.0),
+                _ => Color::new(1.0, 0.2, 0.22, 1.0),
+            };
+            draw_circle(
+                projectile.position.x,
+                projectile.position.y,
+                projectile.radius + 2.0,
+                Color::new(color.r, color.g, color.b, 0.3),
+            );
+            draw_circle(
+                projectile.position.x,
+                projectile.position.y,
+                projectile.radius,
+                color,
+            );
         }
         for knife in knives {
             draw_line(

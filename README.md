@@ -22,7 +22,7 @@ Prototype of a 2D top-down action arena built in Rust with macroquad.
 - Android multi-touch controls with a virtual movement stick and ability buttons
 - Stand strike, knife throwing, and dash
 - Time stop lets the player move while enemies and knives freeze; attacks are queued until time resumes
-- Enemy melee damage, health and time-charge bars, and repeating waves
+- Distinct enemy movement, shooter and sniper projectiles, melee damage, health and time-charge bars, and repeating waves
 
 ## Release builds
 
