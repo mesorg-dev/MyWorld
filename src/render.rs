@@ -37,6 +37,7 @@ impl ArenaRenderer {
         time_stop_remaining: f32,
         time_stop_cooldown_remaining: f32,
         knife_cooldown_remaining: f32,
+        left_handed: bool,
     ) {
         set_default_camera();
         clear_background(Color::new(0.015, 0.012, 0.035, 1.0));
@@ -97,7 +98,7 @@ impl ArenaRenderer {
             time_stop_cooldown_remaining,
         );
         if touch_controls_visible {
-            let layout = touch_layout(screen_size);
+            let layout = touch_layout(screen_size, left_handed);
             self.draw_touch_controls(
                 layout,
                 move_stick_position,
@@ -242,6 +243,80 @@ impl ArenaRenderer {
             Color::new(0.85, 0.2, 0.28, 0.88),
             0.0,
         );
+        self.draw_touch_button(layout.pause, "II", Color::new(0.2, 0.25, 0.38, 0.8), 0.0);
+    }
+
+    pub fn draw_menu_overlay(&self, title: &str, entries: &[String], selected: usize) {
+        set_default_camera();
+        let screen_size = vec2(screen_width(), screen_height());
+        let view_size = virtual_view_size(screen_size);
+        let camera = Camera2D {
+            target: vec2(VIRTUAL_WIDTH / 2.0, VIRTUAL_HEIGHT / 2.0),
+            zoom: vec2(2.0 / view_size.x, 2.0 / view_size.y),
+            ..Default::default()
+        };
+        set_camera(&camera);
+
+        let origin = (vec2(VIRTUAL_WIDTH, VIRTUAL_HEIGHT) - view_size) * 0.5;
+        draw_rectangle(
+            origin.x,
+            origin.y,
+            view_size.x,
+            view_size.y,
+            Color::new(0.005, 0.005, 0.015, 0.78),
+        );
+        draw_rectangle(
+            135.0,
+            68.0,
+            210.0,
+            134.0,
+            Color::new(0.045, 0.025, 0.08, 0.98),
+        );
+        draw_rectangle_lines(
+            135.0,
+            68.0,
+            210.0,
+            134.0,
+            2.0,
+            Color::new(0.92, 0.16, 0.46, 0.9),
+        );
+
+        let title_width = measure_text(title, None, 18, 1.0).width;
+        draw_text(
+            title,
+            240.0 - title_width / 2.0,
+            96.0,
+            18.0,
+            Color::new(0.15, 0.88, 1.0, 1.0),
+        );
+
+        for (index, entry) in entries.iter().enumerate() {
+            let y = 124.0 + index as f32 * 34.0;
+            let active = index == selected;
+            if active {
+                draw_rectangle(
+                    153.0,
+                    y - 16.0,
+                    174.0,
+                    25.0,
+                    Color::new(0.35, 0.08, 0.2, 0.9),
+                );
+            }
+            let text_width = measure_text(entry, None, 11, 1.0).width;
+            draw_text(
+                entry,
+                240.0 - text_width / 2.0,
+                y,
+                11.0,
+                if active {
+                    WHITE
+                } else {
+                    Color::new(0.7, 0.68, 0.8, 1.0)
+                },
+            );
+        }
+
+        set_default_camera();
     }
 
     fn draw_touch_button(&self, center: Vec2, label: &str, fill: Color, cooldown: f32) {

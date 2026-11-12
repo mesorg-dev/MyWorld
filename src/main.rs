@@ -12,12 +12,20 @@ use crate::combat::Knife;
 use crate::enemies::{
     spawn_wave, update_enemies, update_enemy_projectiles, Enemy, EnemyProjectile,
 };
-use crate::input::{read_input, InputState};
+use crate::input::{pointer_pressed_position, read_input, InputState};
 use crate::player::Player;
 use crate::render::ArenaRenderer;
 use crate::time::{DelayedHit, FinisherKind, TimeState};
 
 const KNIFE_COOLDOWN: f32 = 0.55;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AppScreen {
+    MainMenu,
+    Playing,
+    Paused,
+    Settings,
+}
 
 struct App {
     time: TimeState,
@@ -30,6 +38,11 @@ struct App {
     renderer: ArenaRenderer,
     wave: u32,
     fullscreen: bool,
+    screen: AppScreen,
+    settings_return_screen: AppScreen,
+    menu_selection: usize,
+    left_handed: bool,
+    run_started: bool,
 }
 
 impl App {
@@ -45,6 +58,11 @@ impl App {
             renderer: ArenaRenderer::new(),
             wave: 1,
             fullscreen: false,
+            screen: AppScreen::MainMenu,
+            settings_return_screen: AppScreen::MainMenu,
+            menu_selection: 0,
+            left_handed: false,
+            run_started: false,
         }
     }
 
@@ -53,7 +71,133 @@ impl App {
             self.fullscreen = !self.fullscreen;
             set_fullscreen(self.fullscreen);
         }
-        self.input = read_input(self.player.position, self.player.attack_direction);
+
+        if self.screen != AppScreen::Playing {
+            self.update_menu();
+            return;
+        }
+
+        self.input = read_input(
+            self.player.position,
+            self.player.attack_direction,
+            self.left_handed,
+        );
+        if self.input.pause_pressed {
+            self.screen = AppScreen::Paused;
+            self.menu_selection = 0;
+            return;
+        }
+
+        self.update_gameplay();
+    }
+
+    fn update_menu(&mut self) {
+        if is_key_pressed(KeyCode::Escape) {
+            match self.screen {
+                AppScreen::Paused => self.screen = AppScreen::Playing,
+                AppScreen::Settings => {
+                    self.screen = self.settings_return_screen;
+                    self.menu_selection = 0;
+                }
+                AppScreen::MainMenu | AppScreen::Playing => {}
+            }
+            return;
+        }
+
+        let entries = self.menu_entries();
+        if entries.is_empty() {
+            return;
+        }
+
+        if is_key_pressed(KeyCode::Down) {
+            self.menu_selection = (self.menu_selection + 1) % entries.len();
+        } else if is_key_pressed(KeyCode::Up) {
+            self.menu_selection = (self.menu_selection + entries.len() - 1) % entries.len();
+        }
+
+        let clicked = pointer_pressed_position().and_then(|position| {
+            if !(135.0..345.0).contains(&position.x) {
+                return None;
+            }
+            entries.iter().enumerate().find_map(|(index, _)| {
+                let center_y = 124.0 + index as f32 * 34.0;
+                (position.y >= center_y - 14.0 && position.y <= center_y + 12.0).then_some(index)
+            })
+        });
+        if let Some(index) = clicked {
+            self.menu_selection = index;
+        }
+
+        let activate = clicked.is_some() || is_key_pressed(KeyCode::Enter);
+        if !activate {
+            return;
+        }
+
+        match self.screen {
+            AppScreen::MainMenu => match self.menu_selection {
+                0 => {
+                    self.run_started = true;
+                    self.screen = AppScreen::Playing;
+                }
+                1 => {
+                    self.settings_return_screen = AppScreen::MainMenu;
+                    self.screen = AppScreen::Settings;
+                    self.menu_selection = 0;
+                }
+                _ => {}
+            },
+            AppScreen::Paused => match self.menu_selection {
+                0 => self.screen = AppScreen::Playing,
+                1 => {
+                    self.settings_return_screen = AppScreen::Paused;
+                    self.screen = AppScreen::Settings;
+                    self.menu_selection = 0;
+                }
+                2 => {
+                    self.screen = AppScreen::MainMenu;
+                    self.menu_selection = 0;
+                }
+                _ => {}
+            },
+            AppScreen::Settings => match self.menu_selection {
+                0 => self.left_handed = !self.left_handed,
+                1 => {
+                    self.screen = self.settings_return_screen;
+                    self.menu_selection = 0;
+                }
+                _ => {}
+            },
+            AppScreen::Playing => {}
+        }
+    }
+
+    fn menu_entries(&self) -> Vec<String> {
+        match self.screen {
+            AppScreen::MainMenu => vec![
+                if self.run_started {
+                    "CONTINUE".to_owned()
+                } else {
+                    "START".to_owned()
+                },
+                "SETTINGS".to_owned(),
+            ],
+            AppScreen::Paused => vec![
+                "RESUME".to_owned(),
+                "SETTINGS".to_owned(),
+                "MAIN MENU".to_owned(),
+            ],
+            AppScreen::Settings => vec![
+                format!(
+                    "CONTROL SIDE: {}",
+                    if self.left_handed { "LEFT" } else { "RIGHT" }
+                ),
+                "BACK".to_owned(),
+            ],
+            AppScreen::Playing => Vec::new(),
+        }
+    }
+
+    fn update_gameplay(&mut self) {
         let dt = get_frame_time().min(0.033);
         self.knife_cooldown_remaining = (self.knife_cooldown_remaining - dt).max(0.0);
         let time_stop_expired = self.time.update(dt);
@@ -134,7 +278,18 @@ impl App {
             self.time.time_stop_remaining,
             self.time.time_stop_cooldown_remaining,
             self.knife_cooldown_remaining,
+            self.left_handed,
         );
+        if self.screen != AppScreen::Playing {
+            let (title, entries) = match self.screen {
+                AppScreen::MainMenu => ("MY WORLD", self.menu_entries()),
+                AppScreen::Paused => ("PAUSED", self.menu_entries()),
+                AppScreen::Settings => ("SETTINGS", self.menu_entries()),
+                AppScreen::Playing => return,
+            };
+            self.renderer
+                .draw_menu_overlay(title, &entries, self.menu_selection);
+        }
     }
 
     fn stand_attack(&mut self) {

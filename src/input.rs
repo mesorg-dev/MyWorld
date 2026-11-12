@@ -18,6 +18,7 @@ pub struct TouchLayout {
     pub dash: Vec2,
     pub timestop: Vec2,
     pub strike: Vec2,
+    pub pause: Vec2,
 }
 
 #[allow(dead_code)]
@@ -31,6 +32,7 @@ pub struct InputState {
     pub throw_pressed: bool,
     pub dash_pressed: bool,
     pub timestop_pressed: bool,
+    pub pause_pressed: bool,
     pub ult_pressed: bool,
     pub touch_controls_visible: bool,
     pub move_stick_position: Vec2,
@@ -39,7 +41,7 @@ pub struct InputState {
     pub aim_stick_active: bool,
 }
 
-pub fn read_input(player_position: Vec2, last_aim_dir: Vec2) -> InputState {
+pub fn read_input(player_position: Vec2, last_aim_dir: Vec2, left_handed: bool) -> InputState {
     let mut move_dir = Vec2::ZERO;
 
     if is_key_down(KeyCode::W) {
@@ -56,7 +58,7 @@ pub fn read_input(player_position: Vec2, last_aim_dir: Vec2) -> InputState {
     }
 
     let screen_size = vec2(screen_width(), screen_height());
-    let controls = touch_layout(screen_size);
+    let controls = touch_layout(screen_size, left_handed);
     let mouse = mouse_position();
     let mouse_aim_position = screen_to_virtual(vec2(mouse.0, mouse.1), screen_size);
     let mut aim_position = mouse_aim_position;
@@ -71,6 +73,7 @@ pub fn read_input(player_position: Vec2, last_aim_dir: Vec2) -> InputState {
     let mut throw_pressed = is_mouse_button_pressed(MouseButton::Right);
     let mut dash_pressed = is_key_pressed(KeyCode::LeftShift);
     let mut timestop_pressed = is_key_pressed(KeyCode::Space);
+    let mut pause_pressed = false;
     let touches = touches();
     let mut move_stick_position = controls.move_stick;
     let mut move_stick_active = false;
@@ -84,16 +87,10 @@ pub fn read_input(player_position: Vec2, last_aim_dir: Vec2) -> InputState {
         }
 
         let position = screen_to_virtual(touch.position, screen_size);
-        if position.x < 240.0 {
-            let offset = position - controls.move_stick;
-            move_stick_position = controls.move_stick + offset.clamp_length_max(STICK_RADIUS);
-            move_stick_active = true;
-            move_dir += joystick_direction(offset);
-            continue;
-        }
-
         let started = touch.phase == TouchPhase::Started;
-        if position.distance(controls.knife) <= ACTION_BUTTON_RADIUS {
+        if position.distance(controls.pause) <= ACTION_BUTTON_RADIUS {
+            pause_pressed |= started;
+        } else if position.distance(controls.knife) <= ACTION_BUTTON_RADIUS {
             throw_pressed |= started;
         } else if position.distance(controls.dash) <= ACTION_BUTTON_RADIUS {
             dash_pressed |= started;
@@ -102,12 +99,18 @@ pub fn read_input(player_position: Vec2, last_aim_dir: Vec2) -> InputState {
         } else if position.distance(controls.strike) <= ACTION_BUTTON_RADIUS {
             attack_pressed |= started;
             attack_held = true;
-        } else {
-            let offset = position - controls.aim_stick;
-            aim_stick_position = controls.aim_stick + offset.clamp_length_max(AIM_STICK_RADIUS);
-            aim_stick_active = true;
-            touch_aim_offset = Some(offset);
+        } else if (position.x < 240.0) == (controls.move_stick.x < 240.0) {
+            let offset = position - controls.move_stick;
+            move_stick_position = controls.move_stick + offset.clamp_length_max(STICK_RADIUS);
+            move_stick_active = true;
+            move_dir += joystick_direction(offset);
+            continue;
         }
+
+        let offset = position - controls.aim_stick;
+        aim_stick_position = controls.aim_stick + offset.clamp_length_max(AIM_STICK_RADIUS);
+        aim_stick_active = true;
+        touch_aim_offset = Some(offset);
     }
 
     move_dir = move_dir.clamp_length_max(1.0);
@@ -128,6 +131,7 @@ pub fn read_input(player_position: Vec2, last_aim_dir: Vec2) -> InputState {
         throw_pressed,
         dash_pressed,
         timestop_pressed,
+        pause_pressed: pause_pressed || is_key_pressed(KeyCode::Escape),
         ult_pressed: is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::R),
         touch_controls_visible: cfg!(target_os = "android") || !touches.is_empty(),
         move_stick_position,
@@ -179,21 +183,35 @@ pub fn virtual_view_size(screen_size: Vec2) -> Vec2 {
     }
 }
 
-pub fn touch_layout(screen_size: Vec2) -> TouchLayout {
+pub fn touch_layout(screen_size: Vec2, left_handed: bool) -> TouchLayout {
     let view_size = virtual_view_size(screen_size);
     let view_origin = (vec2(480.0, 270.0) - view_size) * 0.5;
     let button_top = view_origin.y + KNIFE_BUTTON.y;
     let button_bottom = view_origin.y + view_size.y - (270.0 - STRIKE_BUTTON.y);
     let button_scale = (button_bottom - button_top) / (STRIKE_BUTTON.y - KNIFE_BUTTON.y);
-    let button_x = view_origin.x + view_size.x - (480.0 - KNIFE_BUTTON.x);
+    let left = view_origin.x;
+    let right = view_origin.x + view_size.x;
+    let button_x = if left_handed {
+        left + (480.0 - KNIFE_BUTTON.x)
+    } else {
+        right - (480.0 - KNIFE_BUTTON.x)
+    };
 
     TouchLayout {
         move_stick: vec2(
-            view_origin.x + STICK_CENTER.x,
+            if left_handed {
+                right - STICK_CENTER.x
+            } else {
+                left + STICK_CENTER.x
+            },
             view_origin.y + view_size.y - (270.0 - STICK_CENTER.y),
         ),
         aim_stick: vec2(
-            view_origin.x + view_size.x - (480.0 - AIM_STICK_CENTER.x),
+            if left_handed {
+                left + (480.0 - AIM_STICK_CENTER.x)
+            } else {
+                right - (480.0 - AIM_STICK_CENTER.x)
+            },
             view_origin.y + view_size.y - (270.0 - AIM_STICK_CENTER.y),
         ),
         knife: vec2(button_x, button_top),
@@ -206,7 +224,21 @@ pub fn touch_layout(screen_size: Vec2) -> TouchLayout {
             button_top + (TIMESTOP_BUTTON.y - KNIFE_BUTTON.y) * button_scale,
         ),
         strike: vec2(button_x, button_bottom),
+        pause: vec2(240.0, view_origin.y + 32.0),
     }
+}
+
+pub fn pointer_pressed_position() -> Option<Vec2> {
+    let screen_size = vec2(screen_width(), screen_height());
+    if is_mouse_button_pressed(MouseButton::Left) {
+        let mouse = mouse_position();
+        return Some(screen_to_virtual(vec2(mouse.0, mouse.1), screen_size));
+    }
+
+    touches()
+        .iter()
+        .find(|touch| touch.phase == TouchPhase::Started)
+        .map(|touch| screen_to_virtual(touch.position, screen_size))
 }
 
 #[cfg(test)]
@@ -231,9 +263,14 @@ mod tests {
         assert_eq!(virtual_view_size(screen), vec2(600.0, 270.0));
         assert_eq!(screen_to_virtual(screen / 2.0, screen), vec2(240.0, 135.0));
 
-        let controls = touch_layout(screen);
+        let controls = touch_layout(screen, false);
         assert!((controls.knife.x - 495.0).abs() < 0.01);
         assert!((controls.move_stick.x + 2.0).abs() < 0.01);
+
+        let left_handed_controls = touch_layout(screen, true);
+        assert!(left_handed_controls.move_stick.x > 240.0);
+        assert!(left_handed_controls.aim_stick.x < 240.0);
+        assert!(left_handed_controls.strike.x < 0.0);
     }
 
     #[test]
