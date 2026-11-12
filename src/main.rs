@@ -3,6 +3,7 @@ mod enemies;
 mod input;
 mod player;
 mod render;
+mod room;
 mod skills;
 mod time;
 
@@ -10,11 +11,12 @@ use macroquad::prelude::*;
 
 use crate::combat::Knife;
 use crate::enemies::{
-    spawn_wave, update_enemies, update_enemy_projectiles, Enemy, EnemyProjectile,
+    spawn_room, update_enemies, update_enemy_projectiles, Enemy, EnemyProjectile,
 };
 use crate::input::{pointer_pressed_position, read_input, InputState};
 use crate::player::Player;
 use crate::render::ArenaRenderer;
+use crate::room::Room;
 use crate::time::{DelayedHit, FinisherKind, TimeState};
 
 const KNIFE_COOLDOWN: f32 = 0.55;
@@ -31,12 +33,12 @@ struct App {
     time: TimeState,
     input: InputState,
     player: Player,
+    room: Room,
     enemies: Vec<Enemy>,
     enemy_projectiles: Vec<EnemyProjectile>,
     knives: Vec<Knife>,
     knife_cooldown_remaining: f32,
     renderer: ArenaRenderer,
-    wave: u32,
     fullscreen: bool,
     screen: AppScreen,
     settings_return_screen: AppScreen,
@@ -51,12 +53,12 @@ impl App {
             time: TimeState::new(),
             input: InputState::default(),
             player: Player::new(),
-            enemies: spawn_wave(),
+            room: Room::new(1),
+            enemies: spawn_room(1),
             enemy_projectiles: Vec::new(),
             knives: Vec::new(),
             knife_cooldown_remaining: 0.0,
             renderer: ArenaRenderer::new(),
-            wave: 1,
             fullscreen: false,
             screen: AppScreen::MainMenu,
             settings_return_screen: AppScreen::MainMenu,
@@ -120,7 +122,7 @@ impl App {
                 return None;
             }
             entries.iter().enumerate().find_map(|(index, _)| {
-                let center_y = 124.0 + index as f32 * 34.0;
+                let center_y = ArenaRenderer::menu_entry_y(index, entries.len());
                 (position.y >= center_y - 14.0 && position.y <= center_y + 12.0).then_some(index)
             })
         });
@@ -154,6 +156,10 @@ impl App {
                     self.menu_selection = 0;
                 }
                 2 => {
+                    self.restart_run();
+                    self.screen = AppScreen::Playing;
+                }
+                3 => {
                     self.screen = AppScreen::MainMenu;
                     self.menu_selection = 0;
                 }
@@ -184,6 +190,7 @@ impl App {
             AppScreen::Paused => vec![
                 "RESUME".to_owned(),
                 "SETTINGS".to_owned(),
+                "RESTART RUN".to_owned(),
                 "MAIN MENU".to_owned(),
             ],
             AppScreen::Settings => vec![
@@ -233,6 +240,8 @@ impl App {
                 self.time.world_dt,
             );
             self.player.take_damage(projectile_damage);
+            self.player
+                .take_damage(self.room.update_traps(&self.player, self.time.world_dt));
             self.update_knives(self.time.world_dt);
         }
 
@@ -247,14 +256,18 @@ impl App {
         }
 
         if self.enemies.is_empty() {
-            self.wave += 1;
-            self.enemies = spawn_wave();
+            self.room.open_exit();
+        }
+
+        if self.room.can_leave(self.player.position) {
+            self.advance_room();
         }
 
         if self.player.health <= 0.0 {
             self.player.health = self.player.max_health;
             self.player.position = vec2(240.0, 135.0);
-            self.enemies = spawn_wave();
+            self.room = Room::new(self.room.number);
+            self.enemies = spawn_room(self.room.number);
             self.enemy_projectiles.clear();
             self.knives.clear();
         }
@@ -263,6 +276,7 @@ impl App {
     fn draw(&self) {
         self.renderer.draw_frame(
             &self.player,
+            &self.room,
             &self.enemies,
             &self.enemy_projectiles,
             &self.knives,
@@ -272,7 +286,7 @@ impl App {
             self.input.move_stick_active,
             self.input.aim_stick_position,
             self.input.aim_stick_active,
-            self.wave,
+            self.room.number,
             self.time.time_charge,
             self.time.time_stop_active,
             self.time.time_stop_remaining,
@@ -297,6 +311,7 @@ impl App {
         if direction.length_squared() == 0.0 {
             return;
         }
+
         let target_id = self
             .enemies
             .iter()
@@ -322,6 +337,30 @@ impl App {
                 target.position += impulse * 0.03;
             }
         }
+    }
+
+    fn advance_room(&mut self) {
+        let entry_position = self.room.exit.entry_position();
+        let next_number = self.room.number + 1;
+        self.room = Room::new(next_number);
+        self.player.position = entry_position;
+        self.enemies = spawn_room(next_number);
+        self.enemy_projectiles.clear();
+        self.knives.clear();
+        self.time.time_charge = (self.time.time_charge + 15.0).min(100.0);
+    }
+
+    fn restart_run(&mut self) {
+        self.time = TimeState::new();
+        self.input = InputState::default();
+        self.player = Player::new();
+        self.room = Room::new(1);
+        self.enemies = spawn_room(1);
+        self.enemy_projectiles.clear();
+        self.knives.clear();
+        self.knife_cooldown_remaining = 0.0;
+        self.run_started = true;
+        self.menu_selection = 0;
     }
 
     fn throw_knife(&mut self) {

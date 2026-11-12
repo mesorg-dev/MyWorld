@@ -7,6 +7,7 @@ use macroquad::prelude::*;
 
 use crate::enemies::{Enemy, EnemyKind, EnemyProjectile};
 use crate::player::Player;
+use crate::room::{ExitSide, Room, SpikeTrap};
 
 const VIRTUAL_WIDTH: f32 = 480.0;
 const VIRTUAL_HEIGHT: f32 = 270.0;
@@ -22,6 +23,7 @@ impl ArenaRenderer {
     pub fn draw_frame(
         &self,
         player: &Player,
+        room: &Room,
         enemies: &[Enemy],
         enemy_projectiles: &[EnemyProjectile],
         knives: &[Knife],
@@ -31,7 +33,7 @@ impl ArenaRenderer {
         move_stick_active: bool,
         aim_stick_position: Vec2,
         aim_stick_active: bool,
-        wave: u32,
+        room_number: u32,
         time_charge: f32,
         time_stop_active: bool,
         time_stop_remaining: f32,
@@ -53,6 +55,7 @@ impl ArenaRenderer {
 
         self.draw_background(view_size);
         self.draw_arena();
+        self.draw_room(room);
         for enemy in enemies {
             self.draw_enemy(enemy);
         }
@@ -89,7 +92,7 @@ impl ArenaRenderer {
         self.draw_hud(
             player,
             enemies.len(),
-            wave,
+            room_number,
             time_charge,
             time_stop_active,
             time_stop_remaining,
@@ -258,6 +261,10 @@ impl ArenaRenderer {
         set_camera(&camera);
 
         let origin = (vec2(VIRTUAL_WIDTH, VIRTUAL_HEIGHT) - view_size) * 0.5;
+        let compact = entries.len() >= 4;
+        let panel_y = if compact { 50.0 } else { 68.0 };
+        let panel_height = if compact { 160.0 } else { 134.0 };
+        let title_y = if compact { 80.0 } else { 96.0 };
         draw_rectangle(
             origin.x,
             origin.y,
@@ -267,16 +274,16 @@ impl ArenaRenderer {
         );
         draw_rectangle(
             135.0,
-            68.0,
+            panel_y,
             210.0,
-            134.0,
+            panel_height,
             Color::new(0.045, 0.025, 0.08, 0.98),
         );
         draw_rectangle_lines(
             135.0,
-            68.0,
+            panel_y,
             210.0,
-            134.0,
+            panel_height,
             2.0,
             Color::new(0.92, 0.16, 0.46, 0.9),
         );
@@ -285,23 +292,24 @@ impl ArenaRenderer {
         draw_text(
             title,
             240.0 - title_width / 2.0,
-            96.0,
+            title_y,
             18.0,
             Color::new(0.15, 0.88, 1.0, 1.0),
         );
 
         for (index, entry) in entries.iter().enumerate() {
-            let y = 124.0 + index as f32 * 34.0;
+            let y = Self::menu_entry_y(index, entries.len());
             let active = index == selected;
             if active {
                 draw_rectangle(
                     153.0,
-                    y - 16.0,
+                    y - if compact { 12.0 } else { 16.0 },
                     174.0,
-                    25.0,
+                    if compact { 21.0 } else { 25.0 },
                     Color::new(0.35, 0.08, 0.2, 0.9),
                 );
             }
+
             let text_width = measure_text(entry, None, 11, 1.0).width;
             draw_text(
                 entry,
@@ -317,6 +325,14 @@ impl ArenaRenderer {
         }
 
         set_default_camera();
+    }
+
+    pub fn menu_entry_y(index: usize, count: usize) -> f32 {
+        if count >= 4 {
+            109.0 + index as f32 * 26.0
+        } else {
+            124.0 + index as f32 * 34.0
+        }
     }
 
     fn draw_touch_button(&self, center: Vec2, label: &str, fill: Color, cooldown: f32) {
@@ -407,6 +423,82 @@ impl ArenaRenderer {
             2.0,
             Color::new(0.3, 0.18, 0.38, 1.0),
         );
+    }
+
+    fn draw_room(&self, room: &Room) {
+        let doors = [
+            (ExitSide::Top, Rect::new(228.0, 12.0, 24.0, 13.0)),
+            (ExitSide::Right, Rect::new(455.0, 123.0, 13.0, 24.0)),
+            (ExitSide::Bottom, Rect::new(228.0, 245.0, 24.0, 13.0)),
+            (ExitSide::Left, Rect::new(12.0, 123.0, 13.0, 24.0)),
+        ];
+        for (side, rect) in doors {
+            let is_exit = side == room.exit;
+            let open = is_exit && room.exit_open;
+            let color = if open {
+                Color::new(0.08, 0.9, 0.88, 1.0)
+            } else if is_exit {
+                Color::new(0.92, 0.4, 0.16, 1.0)
+            } else {
+                Color::new(0.17, 0.12, 0.2, 1.0)
+            };
+            draw_rectangle(rect.x, rect.y, rect.w, rect.h, color);
+            draw_rectangle_lines(
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                1.5,
+                Color::new(0.06, 0.025, 0.08, 1.0),
+            );
+            if open {
+                let center = side.exit_position();
+                draw_circle(center.x, center.y, 3.0, WHITE);
+            }
+        }
+
+        for trap in &room.traps {
+            self.draw_spike_trap(trap);
+        }
+    }
+
+    fn draw_spike_trap(&self, trap: &SpikeTrap) {
+        let position = trap.position;
+        let warning = trap.is_warning();
+        let active = trap.is_active();
+        let height = trap.height();
+        let glow = if active {
+            Color::new(1.0, 0.12, 0.28, 0.7)
+        } else if warning {
+            Color::new(1.0, 0.58, 0.12, 0.62)
+        } else {
+            Color::new(0.2, 0.14, 0.24, 0.45)
+        };
+        draw_circle(
+            position.x,
+            position.y,
+            16.0,
+            Color::new(0.04, 0.025, 0.07, 0.8),
+        );
+        draw_circle_lines(position.x, position.y, 16.0, 1.5, glow);
+
+        if height <= 0.0 {
+            return;
+        }
+
+        let spike_color = if active {
+            Color::new(1.0, 0.34, 0.4, 1.0)
+        } else {
+            Color::new(1.0, 0.72, 0.25, 0.95)
+        };
+        for index in 0..8 {
+            let angle = index as f32 * std::f32::consts::TAU / 8.0;
+            let direction = vec2(angle.cos(), angle.sin());
+            let side = vec2(-direction.y, direction.x) * 2.7;
+            let base = position + direction * 5.0;
+            let tip = position + direction * (5.0 + height * 11.0);
+            draw_triangle(base + side, base - side, tip, spike_color);
+        }
     }
 
     fn draw_player(&self, player: &Player) {
@@ -574,7 +666,7 @@ impl ArenaRenderer {
         &self,
         player: &Player,
         enemy_count: usize,
-        wave: u32,
+        room_number: u32,
         time_charge: f32,
         time_stop_active: bool,
         time_stop_remaining: f32,
@@ -646,7 +738,7 @@ impl ArenaRenderer {
             );
         }
         draw_text(
-            &format!("WAVE {wave}  HOSTILES {enemy_count}"),
+            &format!("ROOM {room_number}  HOSTILES {enemy_count}"),
             20.0,
             265.0,
             10.0,

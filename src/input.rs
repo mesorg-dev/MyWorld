@@ -90,15 +90,20 @@ pub fn read_input(player_position: Vec2, last_aim_dir: Vec2, left_handed: bool) 
         let started = touch.phase == TouchPhase::Started;
         if position.distance(controls.pause) <= ACTION_BUTTON_RADIUS {
             pause_pressed |= started;
+            continue;
         } else if position.distance(controls.knife) <= ACTION_BUTTON_RADIUS {
             throw_pressed |= started;
+            continue;
         } else if position.distance(controls.dash) <= ACTION_BUTTON_RADIUS {
             dash_pressed |= started;
+            continue;
         } else if position.distance(controls.timestop) <= ACTION_BUTTON_RADIUS {
             timestop_pressed |= started;
+            continue;
         } else if position.distance(controls.strike) <= ACTION_BUTTON_RADIUS {
             attack_pressed |= started;
             attack_held = true;
+            continue;
         } else if (position.x < 240.0) == (controls.move_stick.x < 240.0) {
             let offset = position - controls.move_stick;
             move_stick_position = controls.move_stick + offset.clamp_length_max(STICK_RADIUS);

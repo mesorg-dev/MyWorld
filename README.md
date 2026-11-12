@@ -21,11 +21,14 @@ Prototype of a 2D top-down action arena built in Rust with macroquad.
 - Adaptive full-screen camera around a 480x270 arena with original neon pixel-art-style visuals
 - WASD movement and mouse aiming
 - Android multi-touch controls with a virtual movement stick and ability buttons
-- Main menu, pause menu, and a left/right-handed touch layout setting
+- Main menu, pause menu with a restart option, and a left/right-handed touch layout setting
 - Stand strike, knife throwing, and dash
 - Cooldowns for dash, knife throws, and time stop
 - Time stop lets the player move while enemies and knives freeze; attacks are queued until time resumes
-- Distinct enemy movement, shooter and sniper projectiles, melee damage, health and time-charge bars, and repeating waves
+- Procedurally varied rooms with a single exit that unlocks after the enemies are defeated
+- Spike traps with warning and active phases that pause during time stop
+- Enemy counts, health, and damage increase as the player advances through rooms
+- Distinct enemy movement, shooter and sniper projectiles, melee damage, health and time-charge bars
 
 ## Release builds
 

@@ -21,6 +21,7 @@ pub struct Enemy {
     pub health: f32,
     pub max_health: f32,
     pub attack_cooldown: f32,
+    pub difficulty_scale: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -69,6 +70,7 @@ impl Enemy {
                 EnemyKind::Sniper => 1.4,
                 _ => 0.4,
             },
+            difficulty_scale: 1.0,
         }
     }
 
@@ -105,11 +107,11 @@ impl Enemy {
             let damage = match self.kind {
                 EnemyKind::Brute => 18.0,
                 _ => 10.0,
-            };
+            } * self.difficulty_scale;
             (damage, None)
         } else if let Some((range, cooldown, speed, damage)) = match self.kind {
-            EnemyKind::Shooter => Some((210.0, 1.15, 72.0, 8.0)),
-            EnemyKind::Sniper => Some((250.0, 1.9, 132.0, 15.0)),
+            EnemyKind::Shooter => Some((210.0, 1.15, 72.0, 8.0 * self.difficulty_scale)),
+            EnemyKind::Sniper => Some((250.0, 1.9, 132.0, 15.0 * self.difficulty_scale)),
             _ => None,
         } {
             if distance <= range && distance_sq > 0.01 && self.attack_cooldown <= 0.0 {
@@ -139,18 +141,27 @@ impl Enemy {
     }
 }
 
-pub fn spawn_wave() -> Vec<Enemy> {
-    let mut enemies = Vec::new();
+pub fn spawn_room(room_number: u32) -> Vec<Enemy> {
     let kinds = [
         EnemyKind::Shooter,
         EnemyKind::Rusher,
         EnemyKind::Brute,
         EnemyKind::Sniper,
     ];
+    let count = (4 + room_number.saturating_sub(1) as usize / 2).min(12);
+    let difficulty_scale = (1.0 + room_number.saturating_sub(1) as f32 * 0.08).min(2.5);
+    let room_offset = room_number as f32 * 0.37;
 
-    for (i, kind) in kinds.iter().enumerate() {
-        let offset = vec2((i as f32) * 40.0 + 60.0, 90.0 + (i as f32 * 18.0));
-        enemies.push(Enemy::new((i + 1) as u32, *kind, offset));
+    let mut enemies = Vec::with_capacity(count);
+    for i in 0..count {
+        let kind = kinds[(i + room_number as usize - 1) % kinds.len()];
+        let angle = std::f32::consts::TAU * i as f32 / count as f32 + room_offset;
+        let position = vec2(240.0 + angle.cos() * 185.0, 135.0 + angle.sin() * 92.0);
+        let mut enemy = Enemy::new((i + 1) as u32, kind, position);
+        enemy.health *= difficulty_scale;
+        enemy.max_health = enemy.health;
+        enemy.difficulty_scale = difficulty_scale;
+        enemies.push(enemy);
     }
 
     enemies
@@ -228,5 +239,15 @@ mod tests {
         let damage = update_enemy_projectiles(&mut projectiles, &player, 0.016);
         assert_eq!(damage, 8.0);
         assert!(projectiles.is_empty());
+    }
+
+    #[test]
+    fn later_rooms_have_more_and_tougher_enemies() {
+        let first = spawn_room(1);
+        let later = spawn_room(5);
+
+        assert_eq!(first.len(), 4);
+        assert_eq!(later.len(), 6);
+        assert!(later[0].max_health > first[0].max_health);
     }
 }
