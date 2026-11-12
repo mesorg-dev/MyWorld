@@ -19,4 +19,3 @@ fullscreen = true
 
 [package.metadata.android.activity_attributes]
 "android:screenOrientation" = "landscape"
-"android:configChanges" = "orientation|screenSize"
