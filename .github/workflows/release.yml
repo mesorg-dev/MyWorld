@@ -1,0 +1,76 @@
+name: Build and publish pre-release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux
+            archive: my_world-linux.zip
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            name: windows
+            archive: my_world-windows.zip
+            target: x86_64-pc-windows-msvc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        shell: bash
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package assets
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [ "${{ matrix.name }}" = "windows" ]; then
+            cp target/${{ matrix.target }}/release/my_world.exe dist/
+            powershell -NoProfile -Command "Compress-Archive -Path 'dist/*' -DestinationPath '${{ matrix.archive }}' -Force"
+          else
+            cp target/${{ matrix.target }}/release/my_world dist/
+            zip -j "${{ matrix.archive }}" dist/my_world
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-artifact
+          path: ${{ matrix.archive }}
+
+  release:
+    name: Publish GitHub pre-release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          files: |
+            release-assets/**/*.zip
