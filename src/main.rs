@@ -17,6 +17,8 @@ use crate::player::Player;
 use crate::render::ArenaRenderer;
 use crate::time::{DelayedHit, FinisherKind, TimeState};
 
+const KNIFE_COOLDOWN: f32 = 0.55;
+
 struct App {
     time: TimeState,
     input: InputState,
@@ -24,8 +26,10 @@ struct App {
     enemies: Vec<Enemy>,
     enemy_projectiles: Vec<EnemyProjectile>,
     knives: Vec<Knife>,
+    knife_cooldown_remaining: f32,
     renderer: ArenaRenderer,
     wave: u32,
+    fullscreen: bool,
 }
 
 impl App {
@@ -37,14 +41,21 @@ impl App {
             enemies: spawn_wave(),
             enemy_projectiles: Vec::new(),
             knives: Vec::new(),
+            knife_cooldown_remaining: 0.0,
             renderer: ArenaRenderer::new(),
             wave: 1,
+            fullscreen: false,
         }
     }
 
     fn update(&mut self) {
-        self.input = read_input(self.player.position);
+        if is_key_pressed(KeyCode::F11) {
+            self.fullscreen = !self.fullscreen;
+            set_fullscreen(self.fullscreen);
+        }
+        self.input = read_input(self.player.position, self.player.attack_direction);
         let dt = get_frame_time().min(0.033);
+        self.knife_cooldown_remaining = (self.knife_cooldown_remaining - dt).max(0.0);
         let time_stop_expired = self.time.update(dt);
         if time_stop_expired {
             self.release_delayed_hits();
@@ -121,6 +132,8 @@ impl App {
             self.time.time_charge,
             self.time.time_stop_active,
             self.time.time_stop_remaining,
+            self.time.time_stop_cooldown_remaining,
+            self.knife_cooldown_remaining,
         );
     }
 
@@ -157,6 +170,10 @@ impl App {
     }
 
     fn throw_knife(&mut self) {
+        if self.knife_cooldown_remaining > 0.0 {
+            return;
+        }
+        self.knife_cooldown_remaining = KNIFE_COOLDOWN;
         let direction = if self.input.aim_dir.length_squared() > 0.0 {
             self.input.aim_dir
         } else {

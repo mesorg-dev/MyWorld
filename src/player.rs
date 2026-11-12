@@ -2,6 +2,8 @@ use macroquad::prelude::*;
 
 use crate::input::InputState;
 
+pub const DASH_COOLDOWN: f32 = 0.9;
+
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct Player {
@@ -17,6 +19,7 @@ pub struct Player {
     pub attack_direction: Vec2,
     pub attack_flash: f32,
     pub dash_remaining: f32,
+    pub dash_cooldown_remaining: f32,
 }
 
 #[allow(dead_code)]
@@ -35,6 +38,7 @@ impl Player {
             attack_direction: Vec2::X,
             attack_flash: 0.0,
             dash_remaining: 0.0,
+            dash_cooldown_remaining: 0.0,
         }
     }
 
@@ -43,8 +47,10 @@ impl Player {
         if input.aim_dir.length_squared() > 0.0 {
             self.attack_direction = input.aim_dir;
         }
-        if input.dash_pressed && self.dash_remaining <= 0.0 {
+        self.dash_cooldown_remaining = (self.dash_cooldown_remaining - dt).max(0.0);
+        if input.dash_pressed && self.dash_remaining <= 0.0 && self.dash_cooldown_remaining <= 0.0 {
             self.dash_remaining = 0.16;
+            self.dash_cooldown_remaining = DASH_COOLDOWN;
         }
         let movement_direction = if self.dash_remaining > 0.0 {
             if direction.length_squared() > 0.0 {
@@ -85,5 +91,26 @@ impl Player {
 
     pub fn take_damage(&mut self, amount: f32) {
         self.health = (self.health - amount).max(0.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dash_cooldown_prevents_immediate_reuse() {
+        let mut player = Player::new();
+        let input = InputState {
+            dash_pressed: true,
+            ..Default::default()
+        };
+        player.update(&input, 0.01);
+        assert!(player.dash_remaining > 0.0);
+
+        player.update(&InputState::default(), 0.2);
+        player.update(&input, 0.01);
+        assert_eq!(player.dash_remaining, 0.0);
+        assert!(player.dash_cooldown_remaining > 0.0);
     }
 }

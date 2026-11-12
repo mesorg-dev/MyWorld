@@ -12,15 +12,16 @@ Prototype of a 2D top-down action arena built in Rust with macroquad.
 
 ## Controls
 
-- Desktop: WASD to move, mouse to aim, left mouse button to strike, right mouse button to throw a knife, Left Shift to dash, Space to stop time.
-- Android: drag the left virtual stick to move and the right virtual stick to aim; while aiming, attacks repeat. Use the on-screen Knife, Dash, and Time buttons for abilities.
+- Desktop: WASD to move, mouse to aim, left mouse button to strike, right mouse button to throw a knife, Left Shift to dash, Space to stop time, and F11 to toggle fullscreen.
+- Android: use the left stick to move and the right stick only to aim. Hold Strike to attack while aiming, or use Knife, Dash, and Time. The touch controls support multiple fingers at once.
 
 ## Current implementation status
 
-- Letterboxed 480x270 arena with original neon pixel-art-style visuals
+- Adaptive full-screen camera around a 480x270 arena with original neon pixel-art-style visuals
 - WASD movement and mouse aiming
 - Android multi-touch controls with a virtual movement stick and ability buttons
 - Stand strike, knife throwing, and dash
+- Cooldowns for dash, knife throws, and time stop
 - Time stop lets the player move while enemies and knives freeze; attacks are queued until time resumes
 - Distinct enemy movement, shooter and sniper projectiles, melee damage, health and time-charge bars, and repeating waves
 

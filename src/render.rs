@@ -1,7 +1,7 @@
 use crate::combat::Knife;
 use crate::input::{
-    ACTION_BUTTON_RADIUS, AIM_STICK_CENTER, AIM_STICK_RADIUS, DASH_BUTTON, KNIFE_BUTTON,
-    STICK_CENTER, STICK_RADIUS, TIMESTOP_BUTTON,
+    touch_layout, virtual_view_size, TouchLayout, ACTION_BUTTON_RADIUS, AIM_STICK_RADIUS,
+    STICK_RADIUS,
 };
 use macroquad::prelude::*;
 
@@ -35,26 +35,22 @@ impl ArenaRenderer {
         time_charge: f32,
         time_stop_active: bool,
         time_stop_remaining: f32,
+        time_stop_cooldown_remaining: f32,
+        knife_cooldown_remaining: f32,
     ) {
         set_default_camera();
         clear_background(Color::new(0.015, 0.012, 0.035, 1.0));
 
-        let scale = (screen_width() / VIRTUAL_WIDTH).min(screen_height() / VIRTUAL_HEIGHT);
-        let viewport_width = (VIRTUAL_WIDTH * scale).round() as i32;
-        let viewport_height = (VIRTUAL_HEIGHT * scale).round() as i32;
+        let screen_size = vec2(screen_width(), screen_height());
+        let view_size = virtual_view_size(screen_size);
         let camera = Camera2D {
             target: vec2(VIRTUAL_WIDTH / 2.0, VIRTUAL_HEIGHT / 2.0),
-            zoom: vec2(2.0 / VIRTUAL_WIDTH, 2.0 / VIRTUAL_HEIGHT),
-            viewport: Some((
-                (screen_width() as i32 - viewport_width) / 2,
-                (screen_height() as i32 - viewport_height) / 2,
-                viewport_width,
-                viewport_height,
-            )),
+            zoom: vec2(2.0 / view_size.x, 2.0 / view_size.y),
             ..Default::default()
         };
         set_camera(&camera);
 
+        self.draw_background(view_size);
         self.draw_arena();
         for enemy in enemies {
             self.draw_enemy(enemy);
@@ -96,13 +92,21 @@ impl ArenaRenderer {
             time_charge,
             time_stop_active,
             time_stop_remaining,
+            player.dash_cooldown_remaining,
+            knife_cooldown_remaining,
+            time_stop_cooldown_remaining,
         );
         if touch_controls_visible {
+            let layout = touch_layout(screen_size);
             self.draw_touch_controls(
+                layout,
                 move_stick_position,
                 move_stick_active,
                 aim_stick_position,
                 aim_stick_active,
+                player.dash_cooldown_remaining,
+                knife_cooldown_remaining,
+                time_stop_cooldown_remaining,
             );
         }
 
@@ -153,19 +157,34 @@ impl ArenaRenderer {
 
     fn draw_touch_controls(
         &self,
+        layout: TouchLayout,
         move_stick_position: Vec2,
         move_stick_active: bool,
         aim_stick_position: Vec2,
         aim_stick_active: bool,
+        dash_cooldown_remaining: f32,
+        knife_cooldown_remaining: f32,
+        time_stop_cooldown_remaining: f32,
     ) {
         let glass = Color::new(0.06, 0.1, 0.18, 0.52);
         let outline = Color::new(0.35, 0.78, 0.92, 0.8);
-        draw_circle(STICK_CENTER.x, STICK_CENTER.y, STICK_RADIUS, glass);
-        draw_circle_lines(STICK_CENTER.x, STICK_CENTER.y, STICK_RADIUS, 2.0, outline);
+        draw_circle(
+            layout.move_stick.x,
+            layout.move_stick.y,
+            STICK_RADIUS,
+            glass,
+        );
+        draw_circle_lines(
+            layout.move_stick.x,
+            layout.move_stick.y,
+            STICK_RADIUS,
+            2.0,
+            outline,
+        );
         let move_knob = if move_stick_active {
             move_stick_position
         } else {
-            STICK_CENTER
+            layout.move_stick
         };
         draw_circle(
             move_knob.x,
@@ -177,17 +196,17 @@ impl ArenaRenderer {
         let aim_knob = if aim_stick_active {
             aim_stick_position
         } else {
-            AIM_STICK_CENTER
+            layout.aim_stick
         };
         draw_circle(
-            AIM_STICK_CENTER.x,
-            AIM_STICK_CENTER.y,
+            layout.aim_stick.x,
+            layout.aim_stick.y,
             AIM_STICK_RADIUS,
             Color::new(0.16, 0.055, 0.16, 0.48),
         );
         draw_circle_lines(
-            AIM_STICK_CENTER.x,
-            AIM_STICK_CENTER.y,
+            layout.aim_stick.x,
+            layout.aim_stick.y,
             AIM_STICK_RADIUS,
             2.0,
             Color::new(0.95, 0.3, 0.65, 0.85),
@@ -199,12 +218,43 @@ impl ArenaRenderer {
             Color::new(0.92, 0.2, 0.58, if aim_stick_active { 0.78 } else { 0.4 }),
         );
 
-        self.draw_touch_button(KNIFE_BUTTON, "KNIFE", Color::new(0.68, 0.25, 0.55, 0.82));
-        self.draw_touch_button(DASH_BUTTON, "DASH", Color::new(0.1, 0.55, 0.78, 0.82));
-        self.draw_touch_button(TIMESTOP_BUTTON, "TIME", Color::new(0.35, 0.3, 0.78, 0.88));
+        self.draw_touch_button(
+            layout.knife,
+            "KNIFE",
+            Color::new(0.68, 0.25, 0.55, 0.82),
+            knife_cooldown_remaining,
+        );
+        self.draw_touch_button(
+            layout.dash,
+            "DASH",
+            Color::new(0.1, 0.55, 0.78, 0.82),
+            dash_cooldown_remaining,
+        );
+        self.draw_touch_button(
+            layout.timestop,
+            "TIME",
+            Color::new(0.35, 0.3, 0.78, 0.88),
+            time_stop_cooldown_remaining,
+        );
+        self.draw_touch_button(
+            layout.strike,
+            "STRIKE",
+            Color::new(0.85, 0.2, 0.28, 0.88),
+            0.0,
+        );
     }
 
-    fn draw_touch_button(&self, center: Vec2, label: &str, fill: Color) {
+    fn draw_touch_button(&self, center: Vec2, label: &str, fill: Color, cooldown: f32) {
+        let label_text = if cooldown > 0.0 {
+            format!("{cooldown:.1}")
+        } else {
+            label.to_owned()
+        };
+        let fill = if cooldown > 0.0 {
+            Color::new(fill.r * 0.4, fill.g * 0.4, fill.b * 0.4, fill.a)
+        } else {
+            fill
+        };
         draw_circle(center.x, center.y, ACTION_BUTTON_RADIUS, fill);
         draw_circle_lines(
             center.x,
@@ -213,14 +263,37 @@ impl ArenaRenderer {
             2.0,
             Color::new(0.78, 0.84, 1.0, 0.9),
         );
-        let text_width = measure_text(label, None, 7, 1.0).width;
+        let text_width = measure_text(&label_text, None, 7, 1.0).width;
         draw_text(
-            label,
+            &label_text,
             center.x - text_width / 2.0,
             center.y + 2.5,
             7.0,
             WHITE,
         );
+    }
+
+    fn draw_background(&self, view_size: Vec2) {
+        let origin = (vec2(VIRTUAL_WIDTH, VIRTUAL_HEIGHT) - view_size) * 0.5;
+        draw_rectangle(
+            origin.x,
+            origin.y,
+            view_size.x,
+            view_size.y,
+            Color::new(0.025, 0.018, 0.045, 1.0),
+        );
+
+        let grid = Color::new(0.08, 0.045, 0.11, 0.55);
+        let mut x = (origin.x / 24.0).floor() * 24.0;
+        while x <= origin.x + view_size.x {
+            draw_line(x, origin.y, x, origin.y + view_size.y, 0.5, grid);
+            x += 24.0;
+        }
+        let mut y = (origin.y / 24.0).floor() * 24.0;
+        while y <= origin.y + view_size.y {
+            draw_line(origin.x, y, origin.x + view_size.x, y, 0.5, grid);
+            y += 24.0;
+        }
     }
 
     fn draw_arena(&self) {
@@ -343,6 +416,14 @@ impl ArenaRenderer {
         }
     }
 
+    fn cooldown_label(remaining: f32) -> String {
+        if remaining > 0.0 {
+            format!("{remaining:.1}")
+        } else {
+            "READY".to_owned()
+        }
+    }
+
     fn draw_enemy(&self, enemy: &Enemy) {
         let p = enemy.position;
         let (coat, accent) = match enemy.kind {
@@ -422,6 +503,9 @@ impl ArenaRenderer {
         time_charge: f32,
         time_stop_active: bool,
         time_stop_remaining: f32,
+        dash_cooldown_remaining: f32,
+        knife_cooldown_remaining: f32,
+        time_stop_cooldown_remaining: f32,
     ) {
         draw_rectangle(20.0, 4.0, 98.0, 11.0, Color::new(0.025, 0.02, 0.05, 1.0));
         draw_rectangle(
@@ -432,6 +516,17 @@ impl ArenaRenderer {
             Color::new(0.94, 0.12, 0.28, 1.0),
         );
         draw_text("HP", 22.0, 13.0, 8.0, WHITE);
+        draw_text(
+            &format!(
+                "DASH {}  KNIFE {}",
+                Self::cooldown_label(dash_cooldown_remaining),
+                Self::cooldown_label(knife_cooldown_remaining)
+            ),
+            20.0,
+            23.0,
+            7.0,
+            Color::new(0.82, 0.8, 0.92, 1.0),
+        );
 
         draw_rectangle(125.0, 4.0, 98.0, 11.0, Color::new(0.025, 0.02, 0.05, 1.0));
         draw_rectangle(
@@ -461,6 +556,14 @@ impl ArenaRenderer {
         if time_stop_active {
             draw_text(
                 &format!("{:.1}", time_stop_remaining.max(0.0)),
+                440.0,
+                13.0,
+                10.0,
+                WHITE,
+            );
+        } else if time_stop_cooldown_remaining > 0.0 {
+            draw_text(
+                &format!("{time_stop_cooldown_remaining:.1}"),
                 440.0,
                 13.0,
                 10.0,

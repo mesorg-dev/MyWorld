@@ -1,5 +1,7 @@
 use macroquad::prelude::*;
 
+pub const TIME_STOP_COOLDOWN: f32 = 0.75;
+
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FinisherKind {
@@ -25,6 +27,7 @@ pub struct TimeState {
     pub time_stop_active: bool,
     pub time_stop_duration: f32,
     pub time_stop_remaining: f32,
+    pub time_stop_cooldown_remaining: f32,
     pub time_charge: f32,
     pub delayed_hits: Vec<DelayedHit>,
 }
@@ -38,6 +41,7 @@ impl TimeState {
             time_stop_active: false,
             time_stop_duration: 1.5,
             time_stop_remaining: 0.0,
+            time_stop_cooldown_remaining: 0.0,
             time_charge: 100.0,
             delayed_hits: Vec::new(),
         }
@@ -46,6 +50,9 @@ impl TimeState {
     pub fn update(&mut self, dt: f32) -> bool {
         self.real_dt = dt;
         let mut expired = false;
+        if !self.time_stop_active {
+            self.time_stop_cooldown_remaining = (self.time_stop_cooldown_remaining - dt).max(0.0);
+        }
         if self.time_stop_active {
             self.time_stop_remaining -= dt;
             if self.time_stop_remaining <= 0.0 {
@@ -59,7 +66,10 @@ impl TimeState {
 
     pub fn activate_time_stop(&mut self) -> bool {
         const TIME_STOP_COST: f32 = 35.0;
-        if self.time_stop_active || self.time_charge < TIME_STOP_COST {
+        if self.time_stop_active
+            || self.time_stop_cooldown_remaining > 0.0
+            || self.time_charge < TIME_STOP_COST
+        {
             return false;
         }
         self.time_charge -= TIME_STOP_COST;
@@ -70,8 +80,12 @@ impl TimeState {
     }
 
     pub fn release_time_stop(&mut self) {
+        let was_active = self.time_stop_active;
         self.time_stop_active = false;
         self.time_stop_remaining = 0.0;
+        if was_active {
+            self.time_stop_cooldown_remaining = TIME_STOP_COOLDOWN;
+        }
         self.world_dt = self.real_dt;
     }
 
@@ -127,5 +141,16 @@ mod tests {
         assert!(!time.time_stop_active);
         assert_eq!(time.world_dt, time.real_dt);
         assert_eq!(time.take_delayed_hits().len(), 1);
+    }
+
+    #[test]
+    fn time_stop_cannot_be_reactivated_until_its_cooldown_expires() {
+        let mut time = TimeState::new();
+        assert!(time.activate_time_stop());
+        time.release_time_stop();
+
+        assert!(!time.activate_time_stop());
+        time.update(TIME_STOP_COOLDOWN);
+        assert!(time.activate_time_stop());
     }
 }
