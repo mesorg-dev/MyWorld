@@ -22,6 +22,9 @@ pub struct Enemy {
     pub max_health: f32,
     pub attack_cooldown: f32,
     pub difficulty_scale: f32,
+    pub facing_direction: Vec2,
+    pub telegraph_remaining: f32,
+    pub telegraph_direction: Vec2,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -71,6 +74,9 @@ impl Enemy {
                 _ => 0.4,
             },
             difficulty_scale: 1.0,
+            facing_direction: Vec2::X,
+            telegraph_remaining: 0.0,
+            telegraph_direction: Vec2::X,
         }
     }
 
@@ -91,9 +97,19 @@ impl Enemy {
                 Some(range) if distance < range - range_tolerance => -direction,
                 Some(range) if distance > range + range_tolerance => direction,
                 Some(_) => Vec2::ZERO,
+                None if self.kind == EnemyKind::Brute && distance <= 22.0 => Vec2::ZERO,
                 None => direction,
             };
             self.velocity = movement * desired_speed;
+            if movement.length_squared() > 0.0 {
+                self.facing_direction = if self.kind == EnemyKind::Brute {
+                    rotate_towards(self.facing_direction, movement, 1.8 * dt)
+                } else {
+                    direction
+                };
+            } else if self.kind != EnemyKind::Brute {
+                self.facing_direction = direction;
+            }
         }
 
         self.position += self.velocity * dt;
@@ -101,6 +117,14 @@ impl Enemy {
         self.position.y = self.position.y.clamp(20.0, 250.0);
 
         self.attack_cooldown = (self.attack_cooldown - dt).max(0.0);
+        if self.telegraph_remaining > 0.0 {
+            self.telegraph_remaining = (self.telegraph_remaining - dt).max(0.0);
+            if self.telegraph_remaining == 0.0 {
+                return (0.0, self.fire_projectile());
+            }
+            return (0.0, None);
+        }
+
         if distance_sq < (self.radius + player.radius + 5.0).powi(2) && self.attack_cooldown <= 0.0
         {
             self.attack_cooldown = 0.8;
@@ -108,37 +132,58 @@ impl Enemy {
                 EnemyKind::Brute => 18.0,
                 _ => 10.0,
             } * self.difficulty_scale;
-            (damage, None)
-        } else if let Some((range, cooldown, speed, damage)) = match self.kind {
-            EnemyKind::Shooter => Some((210.0, 1.15, 72.0, 8.0 * self.difficulty_scale)),
-            EnemyKind::Sniper => Some((250.0, 1.9, 132.0, 15.0 * self.difficulty_scale)),
+            return (damage, None);
+        } else if let Some((range, cooldown, windup)) = match self.kind {
+            EnemyKind::Shooter => Some((210.0, 1.15, 0.28)),
+            EnemyKind::Sniper => Some((250.0, 1.9, 0.55)),
             _ => None,
         } {
             if distance <= range && distance_sq > 0.01 && self.attack_cooldown <= 0.0 {
                 self.attack_cooldown = cooldown;
-                let direction = to_player / distance;
-                (
-                    0.0,
-                    Some(EnemyProjectile {
-                        position: self.position + direction * (self.radius + 2.0),
-                        velocity: direction * speed,
-                        radius: if self.kind == EnemyKind::Sniper {
-                            3.0
-                        } else {
-                            2.5
-                        },
-                        damage,
-                        remaining: 3.0,
-                        kind: self.kind,
-                    }),
-                )
-            } else {
-                (0.0, None)
+                self.telegraph_direction = to_player / distance;
+                self.telegraph_remaining = windup;
             }
-        } else {
-            (0.0, None)
         }
+        (0.0, None)
     }
+
+    pub fn is_armored_from(&self, attacker_position: Vec2) -> bool {
+        if self.kind != EnemyKind::Brute {
+            return false;
+        }
+        let toward_attacker = (attacker_position - self.position).normalize_or_zero();
+        toward_attacker.dot(self.facing_direction) > 0.35
+    }
+
+    fn fire_projectile(&self) -> Option<EnemyProjectile> {
+        let (speed, damage) = match self.kind {
+            EnemyKind::Shooter => (72.0, 8.0 * self.difficulty_scale),
+            EnemyKind::Sniper => (132.0, 15.0 * self.difficulty_scale),
+            _ => return None,
+        };
+        Some(EnemyProjectile {
+            position: self.position + self.telegraph_direction * (self.radius + 2.0),
+            velocity: self.telegraph_direction * speed,
+            radius: if self.kind == EnemyKind::Sniper {
+                3.0
+            } else {
+                2.5
+            },
+            damage,
+            remaining: 3.0,
+            kind: self.kind,
+        })
+    }
+}
+
+fn rotate_towards(current: Vec2, target: Vec2, max_radians: f32) -> Vec2 {
+    let current_angle = current.y.atan2(current.x);
+    let target_angle = target.y.atan2(target.x);
+    let delta = (target_angle - current_angle + std::f32::consts::PI)
+        .rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI;
+    let angle = current_angle + delta.clamp(-max_radians, max_radians);
+    vec2(angle.cos(), angle.sin())
 }
 
 pub fn spawn_room(room_number: u32) -> Vec<Enemy> {
@@ -219,9 +264,20 @@ mod tests {
 
         shooter.attack_cooldown = 0.0;
         let (_, projectile) = shooter.update(&player, 0.016);
-        let projectile = projectile.expect("shooter should fire when its cooldown expires");
+        assert!(projectile.is_none());
+        assert!(shooter.telegraph_remaining > 0.0);
+        let (_, projectile) = shooter.update(&player, 0.3);
+        let projectile = projectile.expect("shooter fires after telegraphing");
         assert!(projectile.velocity.x > 0.0);
         assert!(projectile.velocity.y.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn brute_armor_blocks_frontal_attacks_but_exposes_its_back() {
+        let mut brute = Enemy::new(1, EnemyKind::Brute, vec2(100.0, 100.0));
+        brute.facing_direction = Vec2::X;
+        assert!(brute.is_armored_from(vec2(120.0, 100.0)));
+        assert!(!brute.is_armored_from(vec2(80.0, 100.0)));
     }
 
     #[test]

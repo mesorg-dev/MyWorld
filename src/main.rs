@@ -1,3 +1,4 @@
+mod audio;
 mod combat;
 mod enemies;
 mod input;
@@ -9,7 +10,8 @@ mod time;
 
 use macroquad::prelude::*;
 
-use crate::combat::Knife;
+use crate::audio::SoundBank;
+use crate::combat::{CombatEffects, Knife, RoadRoller};
 use crate::enemies::{
     spawn_room, update_enemies, update_enemy_projectiles, Enemy, EnemyProjectile,
 };
@@ -27,6 +29,9 @@ const TIME_STOP_DURATION_BONUS: f32 = 0.4;
 const MAX_TIME_STOP_DURATION: f32 = 2.7;
 const DASH_COOLDOWN_REDUCTION: f32 = 0.12;
 const MIN_DASH_COOLDOWN: f32 = 0.54;
+const ROAD_ROLLER_COST: f32 = 50.0;
+const ROAD_ROLLER_COOLDOWN: f32 = 9.0;
+const ROAD_ROLLER_DAMAGE: f32 = 48.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AppScreen {
@@ -45,6 +50,11 @@ struct App {
     enemies: Vec<Enemy>,
     enemy_projectiles: Vec<EnemyProjectile>,
     knives: Vec<Knife>,
+    road_roller: Option<RoadRoller>,
+    road_roller_cooldown_remaining: f32,
+    effects: CombatEffects,
+    sounds: SoundBank,
+    sound_enabled: bool,
     knife_cooldown_remaining: f32,
     knife_cooldown_duration: f32,
     skills: SkillTree,
@@ -58,7 +68,7 @@ struct App {
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(sounds: SoundBank) -> Self {
         Self {
             time: TimeState::new(),
             input: InputState::default(),
@@ -67,6 +77,11 @@ impl App {
             enemies: spawn_room(1),
             enemy_projectiles: Vec::new(),
             knives: Vec::new(),
+            road_roller: None,
+            road_roller_cooldown_remaining: 0.0,
+            effects: CombatEffects::default(),
+            sounds,
+            sound_enabled: true,
             knife_cooldown_remaining: 0.0,
             knife_cooldown_duration: KNIFE_COOLDOWN,
             skills: SkillTree::new(),
@@ -139,7 +154,9 @@ impl App {
             }
             entries.iter().enumerate().find_map(|(index, _)| {
                 let center_y = ArenaRenderer::menu_entry_y(index, entries.len());
-                (position.y >= center_y - 14.0 && position.y <= center_y + 12.0).then_some(index)
+                let hit_radius = if entries.len() >= 5 { 10.0 } else { 14.0 };
+                (position.y >= center_y - hit_radius && position.y <= center_y + hit_radius)
+                    .then_some(index)
             })
         });
         if let Some(index) = clicked {
@@ -183,7 +200,8 @@ impl App {
             },
             AppScreen::Settings => match self.menu_selection {
                 0 => self.left_handed = !self.left_handed,
-                1 => {
+                1 => self.sound_enabled = !self.sound_enabled,
+                2 => {
                     self.screen = self.settings_return_screen;
                     self.menu_selection = 0;
                 }
@@ -222,6 +240,7 @@ impl App {
                     "CONTROL SIDE: {}",
                     if self.left_handed { "LEFT" } else { "RIGHT" }
                 ),
+                format!("SOUND: {}", if self.sound_enabled { "ON" } else { "OFF" }),
                 "BACK".to_owned(),
             ],
             AppScreen::Upgrade => self
@@ -231,15 +250,20 @@ impl App {
                 .map(|upgrade| {
                     let level = self.skills.level(upgrade);
                     let effect = match upgrade {
-                        SkillUpgrade::TimeStop => "+0.4 SEC",
-                        SkillUpgrade::KnifeCooldown => "-0.08 SEC COOLDOWN",
-                        SkillUpgrade::DashCooldown => "-0.12 SEC COOLDOWN",
+                        SkillUpgrade::TimeStop => "+0.4S",
+                        SkillUpgrade::KnifeCooldown => "CD -0.08S",
+                        SkillUpgrade::DashCooldown => "CD -0.12S",
+                        SkillUpgrade::RoadRoller => "UNLOCK ULT",
                     };
                     format!(
                         "{} {effect}  {}/{}",
                         upgrade.label(),
                         level + 1,
-                        SkillTree::MAX_LEVEL
+                        if upgrade == SkillUpgrade::RoadRoller {
+                            1
+                        } else {
+                            SkillTree::MAX_LEVEL
+                        }
                     )
                 })
                 .chain(std::iter::once("CONTINUE".to_owned()))
@@ -250,43 +274,71 @@ impl App {
 
     fn update_gameplay(&mut self) {
         let dt = get_frame_time().min(0.033);
+        self.effects.update(dt);
         self.knife_cooldown_remaining = (self.knife_cooldown_remaining - dt).max(0.0);
+        self.road_roller_cooldown_remaining = (self.road_roller_cooldown_remaining - dt).max(0.0);
         let time_stop_expired = self.time.update(dt);
         if time_stop_expired {
             self.release_delayed_hits();
+            self.sounds.time_stop(self.sound_enabled);
         }
 
         if self.input.timestop_pressed {
             if self.time.time_stop_active {
                 self.time.release_time_stop();
                 self.release_delayed_hits();
-            } else {
-                self.time.activate_time_stop();
+                self.sounds.time_stop(self.sound_enabled);
+            } else if self.time.activate_time_stop() {
+                self.sounds.time_stop(self.sound_enabled);
             }
         }
 
+        let dash_was_active = self.player.dash_remaining > 0.0;
         self.player.update(&self.input, dt);
+        if !dash_was_active && self.player.dash_remaining > 0.0 {
+            self.sounds.dash(self.sound_enabled);
+        }
 
         if self.player.attack_fired {
+            self.sounds.strike(self.sound_enabled);
             self.stand_attack();
         }
         if self.input.throw_pressed {
             self.throw_knife();
         }
+        if self.input.ult_pressed {
+            self.activate_road_roller();
+        }
 
-        if self.time.world_dt > 0.0 {
-            let enemy_update = update_enemies(&mut self.enemies, &self.player, self.time.world_dt);
-            self.player.take_damage(enemy_update.contact_damage);
+        let world_dt = self.effects.world_dt(self.time.world_dt);
+        if world_dt > 0.0 {
+            let enemy_update = update_enemies(&mut self.enemies, &self.player, world_dt);
+            let contact_damage = enemy_update.contact_damage;
+            let contact_parried = self
+                .player
+                .take_combat_damage(contact_damage, self.input.block_held);
             self.enemy_projectiles.extend(enemy_update.projectiles);
-            let projectile_damage = update_enemy_projectiles(
-                &mut self.enemy_projectiles,
-                &self.player,
-                self.time.world_dt,
-            );
-            self.player.take_damage(projectile_damage);
+            let projectile_damage =
+                update_enemy_projectiles(&mut self.enemy_projectiles, &self.player, world_dt);
+            let projectile_parried = self
+                .player
+                .take_combat_damage(projectile_damage, self.input.block_held);
+            if contact_parried || projectile_parried {
+                self.time.time_charge = (self.time.time_charge + 12.0).min(100.0);
+                self.effects.spawn_impact(
+                    self.player.position + self.player.attack_direction * 9.0,
+                    self.player.attack_direction,
+                    Color::new(0.25, 0.88, 1.0, 1.0),
+                    2.4,
+                );
+                self.sounds.impact(self.sound_enabled);
+            } else if contact_damage > 0.0 || projectile_damage > 0.0 {
+                self.sounds.impact(self.sound_enabled);
+            }
             self.player
-                .take_damage(self.room.update_traps(&self.player, self.time.world_dt));
-            self.update_knives(self.time.world_dt);
+                .take_damage(self.room.update_traps(&self.player, world_dt));
+            self.update_knives(world_dt);
+            self.update_road_roller(world_dt);
         }
 
         let defeated = self
@@ -319,6 +371,7 @@ impl App {
             self.enemies = spawn_room(self.room.number);
             self.enemy_projectiles.clear();
             self.knives.clear();
+            self.road_roller = None;
         }
     }
 
@@ -329,6 +382,8 @@ impl App {
             &self.enemies,
             &self.enemy_projectiles,
             &self.knives,
+            &self.road_roller,
+            &self.effects,
             self.input.aim_position,
             self.input.touch_controls_visible,
             self.input.move_stick_position,
@@ -341,6 +396,8 @@ impl App {
             self.time.time_stop_remaining,
             self.time.time_stop_cooldown_remaining,
             self.knife_cooldown_remaining,
+            self.road_roller_cooldown_remaining,
+            self.skills.road_roller_unlocked,
             self.left_handed,
         );
         if self.screen != AppScreen::Playing {
@@ -362,6 +419,22 @@ impl App {
             return;
         }
 
+        if self.time.time_stop_active {
+            if let Some(roller) = &mut self.road_roller {
+                if self.input.aim_position.distance(roller.position) <= 38.0
+                    && roller.add_barrage_hit()
+                {
+                    self.effects.spawn_impact(
+                        roller.position,
+                        direction,
+                        Color::new(1.0, 0.7, 0.22, 1.0),
+                        1.0,
+                    );
+                    return;
+                }
+            }
+        }
+
         let target_id = self
             .enemies
             .iter()
@@ -375,6 +448,25 @@ impl App {
             .map(|enemy| enemy.id);
         if let Some(target_id) = target_id {
             let impulse = direction * 42.0;
+            let target_position = self
+                .enemies
+                .iter()
+                .find(|target| target.id == target_id)
+                .map_or(self.player.position, |target| target.position);
+            let armored = self
+                .enemies
+                .iter()
+                .find(|target| target.id == target_id)
+                .is_some_and(|target| target.is_armored_from(self.player.position));
+            if armored {
+                self.effects.spawn_impact(
+                    target_position,
+                    direction,
+                    Color::new(0.35, 0.8, 1.0, 1.0),
+                    0.8,
+                );
+                return;
+            }
             if self.time.time_stop_active {
                 self.time
                     .queue_hit(target_id, 18.0, impulse, FinisherKind::Stand);
@@ -386,6 +478,12 @@ impl App {
                 target.health -= 18.0;
                 target.position += impulse * 0.03;
             }
+            self.effects.spawn_impact(
+                target_position,
+                direction,
+                Color::new(0.1, 0.9, 1.0, 1.0),
+                1.4,
+            );
         }
     }
 
@@ -397,6 +495,7 @@ impl App {
         self.enemies = spawn_room(next_number);
         self.enemy_projectiles.clear();
         self.knives.clear();
+        self.road_roller = None;
         self.time.time_charge = (self.time.time_charge + 15.0).min(100.0);
     }
 
@@ -408,6 +507,9 @@ impl App {
         self.enemies = spawn_room(1);
         self.enemy_projectiles.clear();
         self.knives.clear();
+        self.road_roller = None;
+        self.road_roller_cooldown_remaining = 0.0;
+        self.effects = CombatEffects::default();
         self.knife_cooldown_remaining = 0.0;
         self.knife_cooldown_duration = KNIFE_COOLDOWN;
         self.skills = SkillTree::new();
@@ -434,6 +536,61 @@ impl App {
                 self.player.dash_cooldown_duration =
                     (DASH_COOLDOWN - DASH_COOLDOWN_REDUCTION * level as f32).max(MIN_DASH_COOLDOWN);
             }
+            SkillUpgrade::RoadRoller => {}
+        }
+    }
+
+    fn activate_road_roller(&mut self) {
+        if !self.skills.road_roller_unlocked
+            || self.road_roller_cooldown_remaining > 0.0
+            || self.time.time_charge < ROAD_ROLLER_COST
+            || self.road_roller.is_some()
+        {
+            return;
+        }
+
+        self.time.time_charge -= ROAD_ROLLER_COST;
+        self.road_roller_cooldown_remaining = ROAD_ROLLER_COOLDOWN;
+        self.road_roller = Some(RoadRoller::new(
+            self.input
+                .aim_position
+                .clamp(vec2(32.0, 36.0), vec2(448.0, 234.0)),
+        ));
+    }
+
+    fn update_road_roller(&mut self, dt: f32) {
+        let Some(mut roller) = self.road_roller else {
+            return;
+        };
+        if roller.update(dt) {
+            let radius = 52.0;
+            let damage = ROAD_ROLLER_DAMAGE * roller.damage_multiplier();
+            for enemy in &mut self.enemies {
+                let offset = enemy.position - roller.position;
+                let distance = offset.length();
+                if distance <= radius + enemy.radius {
+                    enemy.health -= damage;
+                    enemy.position += offset.normalize_or_zero() * 34.0;
+                }
+            }
+            self.effects.spawn_impact(
+                roller.position,
+                Vec2::X,
+                Color::new(1.0, 0.48, 0.12, 1.0),
+                5.0,
+            );
+            self.effects.spawn_impact(
+                roller.position,
+                Vec2::Y,
+                Color::new(1.0, 0.82, 0.35, 1.0),
+                3.0,
+            );
+            self.sounds.roller(self.sound_enabled);
+        }
+        if roller.impacted && roller.impact_remaining <= 0.0 {
+            self.road_roller = None;
+        } else {
+            self.road_roller = Some(roller);
         }
     }
 
@@ -442,6 +599,7 @@ impl App {
             return;
         }
         self.knife_cooldown_remaining = self.knife_cooldown_duration;
+        self.sounds.knife(self.sound_enabled);
         let direction = if self.input.aim_dir.length_squared() > 0.0 {
             self.input.aim_dir
         } else {
@@ -493,17 +651,36 @@ impl App {
                 .iter()
                 .find(|enemy| enemy.position.distance(knife.position) <= enemy.radius + 3.0)
             {
-                hits.push((enemy.id, knife.velocity.normalize_or_zero() * 45.0));
+                hits.push((
+                    enemy.id,
+                    knife.position,
+                    knife.velocity.normalize_or_zero() * 45.0,
+                ));
                 false
             } else {
                 true
             }
         });
 
-        for (target_id, impulse) in hits {
+        for (target_id, position, impulse) in hits {
             if let Some(enemy) = self.enemies.iter_mut().find(|enemy| enemy.id == target_id) {
-                enemy.health -= 24.0;
-                enemy.position += impulse * 0.03;
+                if enemy.is_armored_from(position - impulse) {
+                    self.effects.spawn_impact(
+                        position,
+                        impulse,
+                        Color::new(0.35, 0.8, 1.0, 1.0),
+                        0.8,
+                    );
+                } else {
+                    enemy.health -= 24.0;
+                    enemy.position += impulse * 0.03;
+                    self.effects.spawn_impact(
+                        position,
+                        impulse,
+                        Color::new(0.1, 0.9, 1.0, 1.0),
+                        1.2,
+                    );
+                }
             }
         }
     }
@@ -519,6 +696,12 @@ impl App {
             if let Some(enemy) = self.enemies.iter_mut().find(|enemy| enemy.id == target_id) {
                 enemy.health -= damage;
                 enemy.position += impulse_vector * 0.03;
+                self.effects.spawn_impact(
+                    enemy.position,
+                    impulse_vector,
+                    Color::new(1.0, 0.28, 0.42, 1.0),
+                    2.2,
+                );
             }
         }
     }
@@ -527,7 +710,10 @@ impl App {
 #[macroquad::main("MY WORLD")]
 async fn main() {
     simulate_mouse_with_touch(false);
-    let mut app = App::new();
+    let sounds = SoundBank::load()
+        .await
+        .expect("failed to initialize the built-in MY WORLD sound effects");
+    let mut app = App::new(sounds);
 
     loop {
         app.update();

@@ -12,8 +12,8 @@ Prototype of a 2D top-down action arena built in Rust with macroquad.
 
 ## Controls
 
-- Desktop: WASD to move, mouse to aim, left mouse button to strike, right mouse button to throw a knife, Left Shift to dash, Space to stop time, and F11 to toggle fullscreen.
-- Android: use the left stick to move and the right stick only to aim. Hold Strike to attack while aiming, or use Knife, Dash, and Time. The touch controls support multiple fingers at once; tap the pause icon for the menu.
+- Desktop: WASD to move, mouse to aim, left mouse button to strike, right mouse button to throw a knife, Left Shift to dash, Space to stop time, E to block/parry, Q or R for Road Roller after unlocking it, and F11 to toggle fullscreen.
+- Android: use the left stick to move and the right stick only to aim. Hold Strike to attack while aiming; Knife, Dash, Time, Block, and the locked/unlocked Road Roller each have dedicated buttons. The touch controls support multiple fingers at once; tap the pause icon for the menu.
 - Menu: use Up/Down and Enter or click/tap. Settings swaps the movement and aim controls for left-handed play. Press Esc to pause or return.
 
 ## Current implementation status
@@ -28,6 +28,10 @@ Prototype of a 2D top-down action arena built in Rust with macroquad.
 - Procedurally varied rooms with a single exit that unlocks after the enemies are defeated
 - Choose a skill upgrade after clearing each room: extend time stop or reduce knife/dash cooldowns
 - Skill upgrades have three levels and last for the current run
+- Road Roller is an unlockable area attack; hits on it during time stop empower its impact
+- Brutes guard their front, while shooters and snipers telegraph aimed shots before firing
+- Timed blocking parries an attack and restores time charge; holding block reduces incoming damage
+- Room palettes, stand follow-up, hit sparks, impact marks, camera shake, and original generated sound effects add combat feedback
 - Spike traps with warning and active phases that pause during time stop
 - Enemy counts, health, and damage increase as the player advances through rooms
 - Distinct enemy movement, shooter and sniper projectiles, melee damage, health and time-charge bars

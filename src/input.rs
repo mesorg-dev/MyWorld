@@ -4,10 +4,12 @@ pub const STICK_CENTER: Vec2 = Vec2::new(58.0, 210.0);
 pub const STICK_RADIUS: f32 = 34.0;
 pub const AIM_STICK_CENTER: Vec2 = Vec2::new(335.0, 207.0);
 pub const AIM_STICK_RADIUS: f32 = 34.0;
-pub const KNIFE_BUTTON: Vec2 = Vec2::new(435.0, 50.0);
-pub const DASH_BUTTON: Vec2 = Vec2::new(435.0, 105.0);
-pub const TIMESTOP_BUTTON: Vec2 = Vec2::new(435.0, 160.0);
-pub const STRIKE_BUTTON: Vec2 = Vec2::new(435.0, 215.0);
+pub const KNIFE_BUTTON: Vec2 = Vec2::new(435.0, 43.0);
+pub const DASH_BUTTON: Vec2 = Vec2::new(435.0, 88.0);
+pub const TIMESTOP_BUTTON: Vec2 = Vec2::new(435.0, 133.0);
+pub const STRIKE_BUTTON: Vec2 = Vec2::new(435.0, 178.0);
+pub const ULT_BUTTON: Vec2 = Vec2::new(435.0, 223.0);
+pub const BLOCK_BUTTON_Y: f32 = 76.0;
 pub const ACTION_BUTTON_RADIUS: f32 = 21.0;
 
 #[derive(Clone, Copy, Debug)]
@@ -18,6 +20,8 @@ pub struct TouchLayout {
     pub dash: Vec2,
     pub timestop: Vec2,
     pub strike: Vec2,
+    pub ult: Vec2,
+    pub block: Vec2,
     pub pause: Vec2,
 }
 
@@ -32,6 +36,8 @@ pub struct InputState {
     pub throw_pressed: bool,
     pub dash_pressed: bool,
     pub timestop_pressed: bool,
+    pub block_pressed: bool,
+    pub block_held: bool,
     pub pause_pressed: bool,
     pub ult_pressed: bool,
     pub touch_controls_visible: bool,
@@ -73,6 +79,9 @@ pub fn read_input(player_position: Vec2, last_aim_dir: Vec2, left_handed: bool) 
     let mut throw_pressed = is_mouse_button_pressed(MouseButton::Right);
     let mut dash_pressed = is_key_pressed(KeyCode::LeftShift);
     let mut timestop_pressed = is_key_pressed(KeyCode::Space);
+    let mut ult_pressed = is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::R);
+    let mut block_pressed = is_key_pressed(KeyCode::E);
+    let mut block_held = is_key_down(KeyCode::E);
     let mut pause_pressed = false;
     let touches = touches();
     let mut move_stick_position = controls.move_stick;
@@ -103,6 +112,13 @@ pub fn read_input(player_position: Vec2, last_aim_dir: Vec2, left_handed: bool) 
         } else if position.distance(controls.strike) <= ACTION_BUTTON_RADIUS {
             attack_pressed |= started;
             attack_held = true;
+            continue;
+        } else if position.distance(controls.ult) <= ACTION_BUTTON_RADIUS {
+            ult_pressed |= started;
+            continue;
+        } else if position.distance(controls.block) <= ACTION_BUTTON_RADIUS {
+            block_pressed |= started;
+            block_held = true;
             continue;
         } else if (position.x < 240.0) == (controls.move_stick.x < 240.0) {
             let offset = position - controls.move_stick;
@@ -137,7 +153,9 @@ pub fn read_input(player_position: Vec2, last_aim_dir: Vec2, left_handed: bool) 
         dash_pressed,
         timestop_pressed,
         pause_pressed: pause_pressed || is_key_pressed(KeyCode::Escape),
-        ult_pressed: is_key_pressed(KeyCode::Q) || is_key_pressed(KeyCode::R),
+        ult_pressed,
+        block_pressed,
+        block_held,
         touch_controls_visible: cfg!(target_os = "android") || !touches.is_empty(),
         move_stick_position,
         move_stick_active,
@@ -192,8 +210,8 @@ pub fn touch_layout(screen_size: Vec2, left_handed: bool) -> TouchLayout {
     let view_size = virtual_view_size(screen_size);
     let view_origin = (vec2(480.0, 270.0) - view_size) * 0.5;
     let button_top = view_origin.y + KNIFE_BUTTON.y;
-    let button_bottom = view_origin.y + view_size.y - (270.0 - STRIKE_BUTTON.y);
-    let button_scale = (button_bottom - button_top) / (STRIKE_BUTTON.y - KNIFE_BUTTON.y);
+    let button_bottom = view_origin.y + view_size.y - (270.0 - ULT_BUTTON.y);
+    let button_scale = (button_bottom - button_top) / (ULT_BUTTON.y - KNIFE_BUTTON.y);
     let left = view_origin.x;
     let right = view_origin.x + view_size.x;
     let button_x = if left_handed {
@@ -228,7 +246,19 @@ pub fn touch_layout(screen_size: Vec2, left_handed: bool) -> TouchLayout {
             button_x,
             button_top + (TIMESTOP_BUTTON.y - KNIFE_BUTTON.y) * button_scale,
         ),
-        strike: vec2(button_x, button_bottom),
+        strike: vec2(
+            button_x,
+            button_top + (STRIKE_BUTTON.y - KNIFE_BUTTON.y) * button_scale,
+        ),
+        ult: vec2(button_x, button_bottom),
+        block: vec2(
+            if left_handed {
+                right - STICK_CENTER.x
+            } else {
+                left + STICK_CENTER.x
+            },
+            view_origin.y + BLOCK_BUTTON_Y,
+        ),
         pause: vec2(240.0, view_origin.y + 32.0),
     }
 }
@@ -276,6 +306,26 @@ mod tests {
         assert!(left_handed_controls.move_stick.x > 240.0);
         assert!(left_handed_controls.aim_stick.x < 240.0);
         assert!(left_handed_controls.strike.x < 0.0);
+    }
+
+    #[test]
+    fn mobile_ability_buttons_do_not_overlap_each_other_or_the_aim_stick() {
+        let screen = vec2(1280.0, 720.0);
+        for left_handed in [false, true] {
+            let controls = touch_layout(screen, left_handed);
+            let buttons = [
+                controls.knife,
+                controls.dash,
+                controls.timestop,
+                controls.strike,
+                controls.ult,
+            ];
+            for pair in buttons.windows(2) {
+                assert!(pair[0].distance(pair[1]) > ACTION_BUTTON_RADIUS * 2.0);
+            }
+            assert!(controls.ult.distance(controls.aim_stick) > 55.0);
+            assert!(controls.block.distance(controls.move_stick) > 80.0);
+        }
     }
 
     #[test]

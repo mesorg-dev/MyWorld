@@ -21,6 +21,8 @@ pub struct Player {
     pub dash_remaining: f32,
     pub dash_cooldown_remaining: f32,
     pub dash_cooldown_duration: f32,
+    pub block_held: bool,
+    pub parry_window_remaining: f32,
 }
 
 #[allow(dead_code)]
@@ -41,11 +43,18 @@ impl Player {
             dash_remaining: 0.0,
             dash_cooldown_remaining: 0.0,
             dash_cooldown_duration: DASH_COOLDOWN,
+            block_held: false,
+            parry_window_remaining: 0.0,
         }
     }
 
     pub fn update(&mut self, input: &InputState, dt: f32) {
         let direction = input.move_dir.clamp_length_max(1.0);
+        self.block_held = input.block_held;
+        self.parry_window_remaining = (self.parry_window_remaining - dt).max(0.0);
+        if input.block_pressed {
+            self.parry_window_remaining = 0.18;
+        }
         if input.aim_dir.length_squared() > 0.0 {
             self.attack_direction = input.aim_dir;
         }
@@ -94,6 +103,18 @@ impl Player {
     pub fn take_damage(&mut self, amount: f32) {
         self.health = (self.health - amount).max(0.0);
     }
+
+    pub fn take_combat_damage(&mut self, amount: f32, blocking: bool) -> bool {
+        if amount <= 0.0 {
+            return false;
+        }
+        if blocking && self.parry_window_remaining > 0.0 {
+            self.parry_window_remaining = 0.0;
+            return true;
+        }
+        self.take_damage(if blocking { amount * 0.35 } else { amount });
+        false
+    }
 }
 
 #[cfg(test)]
@@ -129,5 +150,23 @@ mod tests {
         );
 
         assert!((player.dash_cooldown_remaining - 0.54).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn a_timed_block_parries_once_and_a_held_block_reduces_damage() {
+        let mut player = Player::new();
+        player.update(
+            &InputState {
+                block_pressed: true,
+                block_held: true,
+                ..Default::default()
+            },
+            0.01,
+        );
+
+        assert!(player.take_combat_damage(20.0, true));
+        assert_eq!(player.health, 100.0);
+        assert!(!player.take_combat_damage(20.0, true));
+        assert_eq!(player.health, 93.0);
     }
 }
