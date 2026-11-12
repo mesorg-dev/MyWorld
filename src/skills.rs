@@ -1,69 +1,94 @@
-#[allow(dead_code)]
-#[derive(Clone, Debug)]
-pub struct SkillNode {
-    pub id: &'static str,
-    pub name: &'static str,
-    pub prereq_ids: Vec<&'static str>,
-    pub unlocked: bool,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SkillUpgrade {
+    TimeStop,
+    KnifeCooldown,
+    DashCooldown,
 }
 
-#[allow(dead_code)]
+impl SkillUpgrade {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TimeStop => "TIME STOP",
+            Self::KnifeCooldown => "KNIFE",
+            Self::DashCooldown => "DASH",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SkillTree {
-    pub nodes: Vec<SkillNode>,
+    pub time_stop_level: u8,
+    pub knife_level: u8,
+    pub dash_level: u8,
 }
 
-#[allow(dead_code)]
 impl SkillTree {
-    pub fn new() -> Self {
-        let nodes = vec![
-            SkillNode {
-                id: "chronos-awakening",
-                name: "Awakening",
-                prereq_ids: Vec::new(),
-                unlocked: true,
-            },
-            SkillNode {
-                id: "chronos-acceleration",
-                name: "Acceleration",
-                prereq_ids: vec!["chronos-awakening"],
-                unlocked: false,
-            },
-            SkillNode {
-                id: "blade-belt",
-                name: "Full Belt",
-                prereq_ids: vec!["chronos-awakening"],
-                unlocked: false,
-            },
-            SkillNode {
-                id: "road-roller",
-                name: "Road Roller",
-                prereq_ids: vec!["blade-belt"],
-                unlocked: false,
-            },
-        ];
+    pub const MAX_LEVEL: u8 = 3;
 
-        Self { nodes }
+    pub fn new() -> Self {
+        Self {
+            time_stop_level: 0,
+            knife_level: 0,
+            dash_level: 0,
+        }
     }
 
-    pub fn unlock(&mut self, id: &str) -> bool {
-        let Some(idx) = self.nodes.iter().position(|node| node.id == id) else {
-            return false;
-        };
+    pub fn available_upgrades(&self) -> Vec<SkillUpgrade> {
+        [
+            SkillUpgrade::TimeStop,
+            SkillUpgrade::KnifeCooldown,
+            SkillUpgrade::DashCooldown,
+        ]
+        .into_iter()
+        .filter(|upgrade| self.level(*upgrade) < Self::MAX_LEVEL)
+        .collect()
+    }
 
-        let prereqs_met = self.nodes.iter().filter(|node| node.id == id).all(|node| {
-            node.prereq_ids.iter().all(|prereq| {
-                self.nodes
-                    .iter()
-                    .any(|candidate| candidate.id == *prereq && candidate.unlocked)
-            })
-        });
-
-        if prereqs_met {
-            self.nodes[idx].unlocked = true;
-            true
-        } else {
-            false
+    pub fn level(&self, upgrade: SkillUpgrade) -> u8 {
+        match upgrade {
+            SkillUpgrade::TimeStop => self.time_stop_level,
+            SkillUpgrade::KnifeCooldown => self.knife_level,
+            SkillUpgrade::DashCooldown => self.dash_level,
         }
+    }
+
+    pub fn upgrade(&mut self, upgrade: SkillUpgrade) -> Option<u8> {
+        let level = match upgrade {
+            SkillUpgrade::TimeStop => &mut self.time_stop_level,
+            SkillUpgrade::KnifeCooldown => &mut self.knife_level,
+            SkillUpgrade::DashCooldown => &mut self.dash_level,
+        };
+        if *level >= Self::MAX_LEVEL {
+            return None;
+        }
+        *level += 1;
+        Some(*level)
+    }
+}
+
+impl Default for SkillTree {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upgrades_are_offered_until_their_branch_reaches_max_level() {
+        let mut skills = SkillTree::new();
+        assert_eq!(skills.available_upgrades().len(), 3);
+
+        for _ in 0..SkillTree::MAX_LEVEL {
+            assert!(skills.upgrade(SkillUpgrade::KnifeCooldown).is_some());
+        }
+
+        assert_eq!(
+            skills.available_upgrades(),
+            vec![SkillUpgrade::TimeStop, SkillUpgrade::DashCooldown]
+        );
+        assert!(skills.upgrade(SkillUpgrade::KnifeCooldown).is_none());
     }
 }

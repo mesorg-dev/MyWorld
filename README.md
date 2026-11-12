@@ -26,6 +26,8 @@ Prototype of a 2D top-down action arena built in Rust with macroquad.
 - Cooldowns for dash, knife throws, and time stop
 - Time stop lets the player move while enemies and knives freeze; attacks are queued until time resumes
 - Procedurally varied rooms with a single exit that unlocks after the enemies are defeated
+- Choose a skill upgrade after clearing each room: extend time stop or reduce knife/dash cooldowns
+- Skill upgrades have three levels and last for the current run
 - Spike traps with warning and active phases that pause during time stop
 - Enemy counts, health, and damage increase as the player advances through rooms
 - Distinct enemy movement, shooter and sniper projectiles, melee damage, health and time-charge bars

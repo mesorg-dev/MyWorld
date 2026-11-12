@@ -122,6 +122,7 @@ pub struct Room {
     pub exit: ExitSide,
     pub exit_open: bool,
     pub traps: Vec<SpikeTrap>,
+    clear_reward_claimed: bool,
 }
 
 impl Room {
@@ -154,6 +155,7 @@ impl Room {
             exit: ExitSide::from_room_number(number),
             exit_open: false,
             traps,
+            clear_reward_claimed: false,
         }
     }
 
@@ -166,6 +168,14 @@ impl Room {
 
     pub fn open_exit(&mut self) {
         self.exit_open = true;
+    }
+
+    pub fn claim_clear_reward(&mut self) -> bool {
+        if self.clear_reward_claimed {
+            return false;
+        }
+        self.clear_reward_claimed = true;
+        true
     }
 
     pub fn can_leave(&self, player_position: Vec2) -> bool {
@@ -190,6 +200,13 @@ mod tests {
         assert!(!room.can_leave(exit_position));
         room.open_exit();
         assert!(room.can_leave(exit_position));
+    }
+
+    #[test]
+    fn room_clear_reward_can_only_be_claimed_once() {
+        let mut room = Room::new(1);
+        assert!(room.claim_clear_reward());
+        assert!(!room.claim_clear_reward());
     }
 
     #[test]

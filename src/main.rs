@@ -14,12 +14,19 @@ use crate::enemies::{
     spawn_room, update_enemies, update_enemy_projectiles, Enemy, EnemyProjectile,
 };
 use crate::input::{pointer_pressed_position, read_input, InputState};
-use crate::player::Player;
+use crate::player::{Player, DASH_COOLDOWN};
 use crate::render::ArenaRenderer;
 use crate::room::Room;
-use crate::time::{DelayedHit, FinisherKind, TimeState};
+use crate::skills::{SkillTree, SkillUpgrade};
+use crate::time::{DelayedHit, FinisherKind, TimeState, DEFAULT_TIME_STOP_DURATION};
 
 const KNIFE_COOLDOWN: f32 = 0.55;
+const KNIFE_COOLDOWN_REDUCTION: f32 = 0.08;
+const MIN_KNIFE_COOLDOWN: f32 = 0.31;
+const TIME_STOP_DURATION_BONUS: f32 = 0.4;
+const MAX_TIME_STOP_DURATION: f32 = 2.7;
+const DASH_COOLDOWN_REDUCTION: f32 = 0.12;
+const MIN_DASH_COOLDOWN: f32 = 0.54;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AppScreen {
@@ -27,6 +34,7 @@ enum AppScreen {
     Playing,
     Paused,
     Settings,
+    Upgrade,
 }
 
 struct App {
@@ -38,6 +46,8 @@ struct App {
     enemy_projectiles: Vec<EnemyProjectile>,
     knives: Vec<Knife>,
     knife_cooldown_remaining: f32,
+    knife_cooldown_duration: f32,
+    skills: SkillTree,
     renderer: ArenaRenderer,
     fullscreen: bool,
     screen: AppScreen,
@@ -58,6 +68,8 @@ impl App {
             enemy_projectiles: Vec::new(),
             knives: Vec::new(),
             knife_cooldown_remaining: 0.0,
+            knife_cooldown_duration: KNIFE_COOLDOWN,
+            skills: SkillTree::new(),
             renderer: ArenaRenderer::new(),
             fullscreen: false,
             screen: AppScreen::MainMenu,
@@ -99,6 +111,10 @@ impl App {
                 AppScreen::Paused => self.screen = AppScreen::Playing,
                 AppScreen::Settings => {
                     self.screen = self.settings_return_screen;
+                    self.menu_selection = 0;
+                }
+                AppScreen::Upgrade => {
+                    self.screen = AppScreen::Playing;
                     self.menu_selection = 0;
                 }
                 AppScreen::MainMenu | AppScreen::Playing => {}
@@ -173,6 +189,14 @@ impl App {
                 }
                 _ => {}
             },
+            AppScreen::Upgrade => {
+                let upgrades = self.skills.available_upgrades();
+                if self.menu_selection < upgrades.len() {
+                    self.apply_upgrade(upgrades[self.menu_selection]);
+                }
+                self.screen = AppScreen::Playing;
+                self.menu_selection = 0;
+            }
             AppScreen::Playing => {}
         }
     }
@@ -200,6 +224,26 @@ impl App {
                 ),
                 "BACK".to_owned(),
             ],
+            AppScreen::Upgrade => self
+                .skills
+                .available_upgrades()
+                .into_iter()
+                .map(|upgrade| {
+                    let level = self.skills.level(upgrade);
+                    let effect = match upgrade {
+                        SkillUpgrade::TimeStop => "+0.4 SEC",
+                        SkillUpgrade::KnifeCooldown => "-0.08 SEC COOLDOWN",
+                        SkillUpgrade::DashCooldown => "-0.12 SEC COOLDOWN",
+                    };
+                    format!(
+                        "{} {effect}  {}/{}",
+                        upgrade.label(),
+                        level + 1,
+                        SkillTree::MAX_LEVEL
+                    )
+                })
+                .chain(std::iter::once("CONTINUE".to_owned()))
+                .collect(),
             AppScreen::Playing => Vec::new(),
         }
     }
@@ -257,6 +301,11 @@ impl App {
 
         if self.enemies.is_empty() {
             self.room.open_exit();
+            if self.room.claim_clear_reward() {
+                self.screen = AppScreen::Upgrade;
+                self.menu_selection = 0;
+                return;
+            }
         }
 
         if self.room.can_leave(self.player.position) {
@@ -299,6 +348,7 @@ impl App {
                 AppScreen::MainMenu => ("MY WORLD", self.menu_entries()),
                 AppScreen::Paused => ("PAUSED", self.menu_entries()),
                 AppScreen::Settings => ("SETTINGS", self.menu_entries()),
+                AppScreen::Upgrade => ("ROOM CLEARED", self.menu_entries()),
                 AppScreen::Playing => return,
             };
             self.renderer
@@ -359,15 +409,39 @@ impl App {
         self.enemy_projectiles.clear();
         self.knives.clear();
         self.knife_cooldown_remaining = 0.0;
+        self.knife_cooldown_duration = KNIFE_COOLDOWN;
+        self.skills = SkillTree::new();
         self.run_started = true;
         self.menu_selection = 0;
+    }
+
+    fn apply_upgrade(&mut self, upgrade: SkillUpgrade) {
+        let Some(level) = self.skills.upgrade(upgrade) else {
+            return;
+        };
+        match upgrade {
+            SkillUpgrade::TimeStop => {
+                self.time.time_stop_duration = (DEFAULT_TIME_STOP_DURATION
+                    + TIME_STOP_DURATION_BONUS * level as f32)
+                    .min(MAX_TIME_STOP_DURATION);
+            }
+            SkillUpgrade::KnifeCooldown => {
+                self.knife_cooldown_duration = (KNIFE_COOLDOWN
+                    - KNIFE_COOLDOWN_REDUCTION * level as f32)
+                    .max(MIN_KNIFE_COOLDOWN);
+            }
+            SkillUpgrade::DashCooldown => {
+                self.player.dash_cooldown_duration =
+                    (DASH_COOLDOWN - DASH_COOLDOWN_REDUCTION * level as f32).max(MIN_DASH_COOLDOWN);
+            }
+        }
     }
 
     fn throw_knife(&mut self) {
         if self.knife_cooldown_remaining > 0.0 {
             return;
         }
-        self.knife_cooldown_remaining = KNIFE_COOLDOWN;
+        self.knife_cooldown_remaining = self.knife_cooldown_duration;
         let direction = if self.input.aim_dir.length_squared() > 0.0 {
             self.input.aim_dir
         } else {

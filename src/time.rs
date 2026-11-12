@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 
 pub const TIME_STOP_COOLDOWN: f32 = 0.75;
+pub const DEFAULT_TIME_STOP_DURATION: f32 = 1.5;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,7 +40,7 @@ impl TimeState {
             real_dt: 1.0 / 60.0,
             world_dt: 1.0 / 60.0,
             time_stop_active: false,
-            time_stop_duration: 1.5,
+            time_stop_duration: DEFAULT_TIME_STOP_DURATION,
             time_stop_remaining: 0.0,
             time_stop_cooldown_remaining: 0.0,
             time_charge: 100.0,

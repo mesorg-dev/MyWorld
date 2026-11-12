@@ -20,6 +20,7 @@ pub struct Player {
     pub attack_flash: f32,
     pub dash_remaining: f32,
     pub dash_cooldown_remaining: f32,
+    pub dash_cooldown_duration: f32,
 }
 
 #[allow(dead_code)]
@@ -39,6 +40,7 @@ impl Player {
             attack_flash: 0.0,
             dash_remaining: 0.0,
             dash_cooldown_remaining: 0.0,
+            dash_cooldown_duration: DASH_COOLDOWN,
         }
     }
 
@@ -50,7 +52,7 @@ impl Player {
         self.dash_cooldown_remaining = (self.dash_cooldown_remaining - dt).max(0.0);
         if input.dash_pressed && self.dash_remaining <= 0.0 && self.dash_cooldown_remaining <= 0.0 {
             self.dash_remaining = 0.16;
-            self.dash_cooldown_remaining = DASH_COOLDOWN;
+            self.dash_cooldown_remaining = self.dash_cooldown_duration;
         }
         let movement_direction = if self.dash_remaining > 0.0 {
             if direction.length_squared() > 0.0 {
@@ -112,5 +114,20 @@ mod tests {
         player.update(&input, 0.01);
         assert_eq!(player.dash_remaining, 0.0);
         assert!(player.dash_cooldown_remaining > 0.0);
+    }
+
+    #[test]
+    fn dash_uses_the_upgraded_cooldown_duration() {
+        let mut player = Player::new();
+        player.dash_cooldown_duration = 0.54;
+        player.update(
+            &InputState {
+                dash_pressed: true,
+                ..Default::default()
+            },
+            0.01,
+        );
+
+        assert!((player.dash_cooldown_remaining - 0.54).abs() < f32::EPSILON);
     }
 }
