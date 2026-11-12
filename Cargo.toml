@@ -7,3 +7,16 @@ edition = "2021"
 
 [dependencies]
 macroquad = "0.4"
+
+[package.metadata.android]
+package_name = "com.mesorgdev.myworld"
+label = "MY WORLD"
+android_version = 35
+min_sdk_version = 26
+target_sdk_version = 35
+build_targets = ["armv7-linux-androideabi", "aarch64-linux-android"]
+fullscreen = true
+
+[package.metadata.android.activity_attributes]
+"android:screenOrientation" = "landscape"
+"android:configChanges" = "orientation|screenSize"

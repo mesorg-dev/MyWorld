@@ -99,6 +99,9 @@ impl App {
             &self.enemies,
             &self.knives,
             self.input.aim_position,
+            self.input.touch_controls_visible,
+            self.input.move_stick_position,
+            self.input.move_stick_active,
             self.wave,
             self.time.time_charge,
             self.time.time_stop_active,
@@ -223,6 +226,7 @@ impl App {
 
 #[macroquad::main("MY WORLD")]
 async fn main() {
+    simulate_mouse_with_touch(false);
     let mut app = App::new();
 
     loop {

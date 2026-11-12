@@ -1,4 +1,7 @@
 use crate::combat::Knife;
+use crate::input::{
+    ACTION_BUTTON_RADIUS, DASH_BUTTON, KNIFE_BUTTON, STICK_CENTER, STICK_RADIUS, TIMESTOP_BUTTON,
+};
 use macroquad::prelude::*;
 
 use crate::enemies::{Enemy, EnemyKind};
@@ -21,6 +24,9 @@ impl ArenaRenderer {
         enemies: &[Enemy],
         knives: &[Knife],
         aim_position: Vec2,
+        touch_controls_visible: bool,
+        move_stick_position: Vec2,
+        move_stick_active: bool,
         wave: u32,
         time_charge: f32,
         time_stop_active: bool,
@@ -69,6 +75,9 @@ impl ArenaRenderer {
             time_stop_active,
             time_stop_remaining,
         );
+        if touch_controls_visible {
+            self.draw_touch_controls(move_stick_position, move_stick_active);
+        }
 
         set_default_camera();
     }
@@ -112,6 +121,47 @@ impl ArenaRenderer {
             position.y + 4.0,
             1.0,
             color,
+        );
+    }
+
+    fn draw_touch_controls(&self, stick_position: Vec2, stick_active: bool) {
+        let glass = Color::new(0.06, 0.1, 0.18, 0.52);
+        let outline = Color::new(0.35, 0.78, 0.92, 0.8);
+        draw_circle(STICK_CENTER.x, STICK_CENTER.y, STICK_RADIUS, glass);
+        draw_circle_lines(STICK_CENTER.x, STICK_CENTER.y, STICK_RADIUS, 2.0, outline);
+        let knob = if stick_active {
+            stick_position
+        } else {
+            STICK_CENTER
+        };
+        draw_circle(
+            knob.x,
+            knob.y,
+            13.0,
+            Color::new(0.12, 0.82, 0.9, if stick_active { 0.72 } else { 0.38 }),
+        );
+
+        self.draw_touch_button(KNIFE_BUTTON, "KNIFE", Color::new(0.68, 0.25, 0.55, 0.82));
+        self.draw_touch_button(DASH_BUTTON, "DASH", Color::new(0.1, 0.55, 0.78, 0.82));
+        self.draw_touch_button(TIMESTOP_BUTTON, "TIME", Color::new(0.35, 0.3, 0.78, 0.88));
+    }
+
+    fn draw_touch_button(&self, center: Vec2, label: &str, fill: Color) {
+        draw_circle(center.x, center.y, ACTION_BUTTON_RADIUS, fill);
+        draw_circle_lines(
+            center.x,
+            center.y,
+            ACTION_BUTTON_RADIUS,
+            2.0,
+            Color::new(0.78, 0.84, 1.0, 0.9),
+        );
+        let text_width = measure_text(label, None, 7, 1.0).width;
+        draw_text(
+            label,
+            center.x - text_width / 2.0,
+            center.y + 2.5,
+            7.0,
+            WHITE,
         );
     }
 

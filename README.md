@@ -10,16 +10,20 @@ Prototype of a 2D top-down action arena built in Rust with macroquad.
 2. Start the game:
    - `cargo run`
 
+## Controls
+
+- Desktop: WASD to move, mouse to aim, left mouse button to strike, right mouse button to throw a knife, Left Shift to dash, Space to stop time.
+- Android: drag on the left virtual stick to move; drag on the right half to aim and strike. Use the on-screen Knife, Dash, and Time buttons for abilities.
+
 ## Current implementation status
 
 - Letterboxed 480x270 arena with original neon pixel-art-style visuals
 - WASD movement and mouse aiming
+- Android multi-touch controls with a virtual movement stick and ability buttons
 - Stand strike, knife throwing, and dash
 - Time stop lets the player move while enemies and knives freeze; attacks are queued until time resumes
 - Enemy melee damage, health and time-charge bars, and repeating waves
 
-Controls: WASD move, mouse aim, left mouse strike, right mouse throw a knife, Left Shift dash, Space toggle time stop.
-
 ## Release builds
 
-GitHub Actions builds Windows and Linux binaries on every branch push and uploads downloadable build artifacts. Push a version tag such as `v0.1.0` to publish those builds as a GitHub pre-release.
+GitHub Actions builds Windows and Linux binaries plus an Android APK on every branch push and uploads downloadable build artifacts. Push a version tag such as `v0.1.0` to publish those builds as a GitHub pre-release.

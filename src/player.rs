@@ -39,7 +39,7 @@ impl Player {
     }
 
     pub fn update(&mut self, input: &InputState, dt: f32) {
-        let direction = input.move_dir.normalize_or_zero();
+        let direction = input.move_dir.clamp_length_max(1.0);
         if input.aim_dir.length_squared() > 0.0 {
             self.attack_direction = input.aim_dir;
         }
@@ -48,7 +48,7 @@ impl Player {
         }
         let movement_direction = if self.dash_remaining > 0.0 {
             if direction.length_squared() > 0.0 {
-                direction
+                direction.normalize()
             } else {
                 input.aim_dir
             }
@@ -69,7 +69,8 @@ impl Player {
         self.position.x = self.position.x.clamp(arena_min, arena_max_x);
         self.position.y = self.position.y.clamp(arena_min, arena_max_y);
 
-        self.attack_fired = input.attack_pressed && self.attack_cooldown <= 0.0;
+        self.attack_fired =
+            (input.attack_pressed || input.attack_held) && self.attack_cooldown <= 0.0;
         if self.attack_fired {
             self.attack_cooldown = 0.2;
             self.attack_direction = input.aim_dir;
